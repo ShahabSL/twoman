@@ -1,0 +1,12 @@
+{
+  "broker_base_url": "https://host.example.com/twoman/bridge/v2",
+  "agent_token": "replace-with-agent-token",
+  "http_timeout_seconds": 30,
+  "flush_delay_seconds": 0.01,
+  "max_batch_bytes": 65536,
+  "peer_id": "agent-main",
+  "http2_enabled": {
+    "ctl": true,
+    "data": false
+  }
+}

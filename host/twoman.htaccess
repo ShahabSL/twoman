@@ -1,0 +1,6 @@
+RewriteEngine On
+RewriteRule ^bridge/v2/health$ http://127.0.0.1:18093/health [P,L,E=HTTP-Prio:0i,E=noabort:1,E=noconntimeout:1,E=noantiddos:1,E=no-lscache:1,E=no-brotli:1,E=no-gzip:1,E=dontlog:1]
+RewriteRule ^bridge/v2/ctl/(.*)$ http://127.0.0.1:18093/ctl/$1 [P,L,E=HTTP-Prio:0i,E=noabort:1,E=noconntimeout:1,E=noantiddos:1,E=no-lscache:1,E=no-brotli:1,E=no-gzip:1,E=dontlog:1]
+RewriteRule ^bridge/v2/data/(.*)$ http://127.0.0.1:18093/data/$1 [P,L,E=HTTP-Prio:1i,E=noabort:1,E=noconntimeout:1,E=noantiddos:1,E=no-lscache:1,E=no-brotli:1,E=no-gzip:1,E=dontlog:1]
+RewriteRule ^bridge/v2/pri/(.*)$ http://127.0.0.1:18093/pri/$1 [P,L,E=HTTP-Prio:2i,E=noabort:1,E=noconntimeout:1,E=noantiddos:1,E=no-lscache:1,E=no-brotli:1,E=no-gzip:1,E=dontlog:1]
+RewriteRule ^bridge/v2/bulk/(.*)$ http://127.0.0.1:18093/bulk/$1 [P,L,E=HTTP-Prio:5i,E=noabort:1,E=noconntimeout:1,E=noantiddos:1,E=no-lscache:1,E=no-brotli:1,E=no-gzip:1,E=dontlog:1]
