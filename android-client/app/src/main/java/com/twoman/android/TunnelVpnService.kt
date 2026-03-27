@@ -14,6 +14,7 @@ import engine.Key
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 class TunnelVpnService : VpnService() {
@@ -25,6 +26,7 @@ class TunnelVpnService : VpnService() {
     private var workerStarted = false
     @Volatile
     private var stopRequested = false
+    private val stopOnce = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +47,7 @@ class TunnelVpnService : VpnService() {
         Log.i(loggerTag, "TunnelVpnService onStartCommand profile=${profile.name}")
         activeProfile = profile
         stopRequested = false
+        stopOnce.set(false)
         NotificationHelper.ensureChannel(this)
         startForeground(
             NotificationHelper.VPN_NOTIFICATION_ID,
@@ -157,8 +160,11 @@ class TunnelVpnService : VpnService() {
             tcpModerateReceiveBuffer = false
         }
 
-        Engine.insert(key)
-        Engine.start()
+        synchronized(ENGINE_LOCK) {
+            runCatching { Engine.stop() }
+            Engine.insert(key)
+            Engine.start()
+        }
         stateStore.write(
             RuntimeStatus(
                 running = true,
@@ -175,6 +181,10 @@ class TunnelVpnService : VpnService() {
     }
 
     private fun stopTunnel(reason: String) {
+        if (!stopOnce.compareAndSet(false, true)) {
+            Log.i(loggerTag, "TunnelVpnService stopTunnel ignored duplicate reason=$reason")
+            return
+        }
         stopRequested = true
         Log.i(loggerTag, "TunnelVpnService stopTunnel reason=$reason")
         val interfaceToClose = vpnInterface
@@ -182,6 +192,9 @@ class TunnelVpnService : VpnService() {
         Log.i(loggerTag, "TunnelVpnService closing vpn interface")
         runCatching { interfaceToClose?.close() }.onFailure { Log.w(loggerTag, "vpnInterface close failed", it) }
         workerStarted = false
+        synchronized(ENGINE_LOCK) {
+            runCatching { Engine.stop() }.onFailure { Log.w(loggerTag, "Engine.stop failed", it) }
+        }
         Log.i(loggerTag, "TunnelVpnService requesting proxy stop")
         ProxyService.stop(this)
         activeProfile?.let { profile ->
@@ -201,10 +214,6 @@ class TunnelVpnService : VpnService() {
         }
         Log.i(loggerTag, "TunnelVpnService stopping foreground")
         stopForeground(STOP_FOREGROUND_REMOVE)
-        thread(name = "twoman-vpn-engine-stop", start = true) {
-            Log.i(loggerTag, "TunnelVpnService stopping engine async")
-            runCatching { Engine.stop() }.onFailure { Log.w(loggerTag, "Engine.stop failed", it) }
-        }
         Log.i(loggerTag, "TunnelVpnService stopSelf")
         stopSelf()
     }
@@ -233,7 +242,6 @@ class TunnelVpnService : VpnService() {
             stopTunnel("service destroy")
         } else {
             workerStarted = false
-            runCatching { Engine.stop() }
             runCatching { vpnInterface?.close() }
             vpnInterface = null
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -244,6 +252,7 @@ class TunnelVpnService : VpnService() {
     companion object {
         private const val ACTION_START = "com.twoman.android.action.VPN_START"
         private const val ACTION_STOP = "com.twoman.android.action.VPN_STOP"
+        private val ENGINE_LOCK = Any()
         const val EXTRA_PROFILE_JSON = "profile_json"
 
         fun start(context: Context, profile: ClientProfile) {

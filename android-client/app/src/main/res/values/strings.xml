@@ -5,6 +5,7 @@
     <string name="status_vpn">VPN</string>
     <string name="action_add">Add</string>
     <string name="action_logs">Logs</string>
+    <string name="action_starting">Starting</string>
     <string name="action_stop">Stop</string>
     <string name="action_stopping">Stopping</string>
     <string name="action_stopped">Off</string>
@@ -36,6 +37,9 @@
     <string name="profile_running_vpn">Running in VPN mode</string>
     <string name="profile_running_proxy_shared">Running in Proxy mode • LAN %1$s</string>
     <string name="status_idle_message">Choose Proxy or VPN on a saved profile.</string>
+    <string name="status_proxy_starting">Starting proxy</string>
+    <string name="status_vpn_starting">Starting VPN</string>
+    <string name="status_starting_message">Starting…</string>
     <string name="status_stopping_message">Stopping…</string>
     <string name="share_chooser_title">Share profile</string>
     <string name="import_failed">Invalid import text</string>

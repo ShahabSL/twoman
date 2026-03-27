@@ -19,6 +19,8 @@ import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.twoman.android.databinding.ActivityMainBinding
 import com.twoman.android.databinding.DialogProfileBinding
+import java.net.InetSocketAddress
+import java.net.Socket
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
@@ -105,6 +107,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderStatus() {
         val status = resolveRuntimeStatus()
+        val starting = !status.running && status.message == getString(R.string.status_starting_message)
         val stopping = status.running && status.message == getString(R.string.status_stopping_message)
         val activeProfile = if (status.profileId.isBlank()) {
             null
@@ -118,12 +121,20 @@ class MainActivity : AppCompatActivity() {
         binding.stopButton.isEnabled = status.running && !stopping
         binding.stopButton.text = getString(
             when {
+                starting -> R.string.action_starting
                 stopping -> R.string.action_stopping
                 status.running -> R.string.action_stop
                 else -> R.string.action_stopped
             },
         )
         when {
+            starting -> {
+                binding.statusText.text = when (status.mode) {
+                    ProxyService.MODE_VPN -> getString(R.string.status_vpn_starting)
+                    else -> getString(R.string.status_proxy_starting)
+                }
+                binding.portsText.text = getString(R.string.status_starting_message)
+            }
             !status.running -> {
                 binding.statusText.text = getString(R.string.status_stopped)
                 binding.portsText.text = status.message.ifBlank { getString(R.string.status_idle_message) }
@@ -206,7 +217,7 @@ class MainActivity : AppCompatActivity() {
                 requestRuntimeStop(currentStatus)
                 val deadline = System.currentTimeMillis() + modeSwitchTimeoutMs
                 while (System.currentTimeMillis() < deadline) {
-                    if (!RuntimeHealth.resolve(this, stateStore.read()).running) {
+                    if (isRuntimeFullyStopped(currentStatus)) {
                         break
                     }
                     Thread.sleep(200)
@@ -243,7 +254,7 @@ class MainActivity : AppCompatActivity() {
     private fun markRuntimeStarting(profile: ClientProfile, mode: String) {
         stateStore.write(
             RuntimeStatus(
-                running = true,
+                running = false,
                 mode = mode,
                 profileId = profile.id,
                 profileName = profile.name,
@@ -251,9 +262,30 @@ class MainActivity : AppCompatActivity() {
                 httpPort = profile.httpPort,
                 socksPort = profile.socksPort,
                 logPath = AppFiles.runtimeLogFile(this, profile.id).absolutePath,
-                message = "",
+                message = getString(R.string.status_starting_message),
             ),
         )
+    }
+
+    private fun isRuntimeFullyStopped(status: RuntimeStatus): Boolean {
+        if (RuntimeHealth.isServiceRunning(this, TunnelVpnService::class.java.name)) {
+            return false
+        }
+        if (RuntimeHealth.isServiceRunning(this, ProxyService::class.java.name)) {
+            return false
+        }
+        return !isPortListening(status.socksPort) && !isPortListening(status.httpPort)
+    }
+
+    private fun isPortListening(port: Int): Boolean {
+        if (port <= 0) {
+            return false
+        }
+        return runCatching {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("127.0.0.1", port), 250)
+            }
+        }.isSuccess
     }
 
     private fun deleteProfile(profile: ClientProfile) {
