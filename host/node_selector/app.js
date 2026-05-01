@@ -1,7 +1,12 @@
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
+var __commonJS = (cb, mod) =>
+  function __require() {
+    return (
+      mod ||
+        (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod),
+      mod.exports
+    );
+  };
 
 // host/node_selector/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
@@ -20,10 +25,9 @@ var require_constants = __commonJS({
       kListener: /* @__PURE__ */ Symbol("kListener"),
       kStatusCode: /* @__PURE__ */ Symbol("status-code"),
       kWebSocket: /* @__PURE__ */ Symbol("websocket"),
-      NOOP: () => {
-      }
+      NOOP: () => {},
     };
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/buffer-util.js
@@ -82,23 +86,22 @@ var require_buffer_util = __commonJS({
       mask: _mask,
       toArrayBuffer,
       toBuffer,
-      unmask: _unmask
+      unmask: _unmask,
     };
     if (!process.env.WS_NO_BUFFER_UTIL) {
       try {
         const bufferUtil = require("bufferutil");
-        module2.exports.mask = function(source, mask, output, offset, length) {
+        module2.exports.mask = function (source, mask, output, offset, length) {
           if (length < 48) _mask(source, mask, output, offset, length);
           else bufferUtil.mask(source, mask, output, offset, length);
         };
-        module2.exports.unmask = function(buffer, mask) {
+        module2.exports.unmask = function (buffer, mask) {
           if (buffer.length < 32) _unmask(buffer, mask);
           else bufferUtil.unmask(buffer, mask);
         };
-      } catch (e) {
-      }
+      } catch (e) {}
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/limiter.js
@@ -148,12 +151,15 @@ var require_limiter = __commonJS({
       }
     };
     module2.exports = Limiter;
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "host/node_selector/node_modules/ws/lib/permessage-deflate.js"(exports2, module2) {
+  "host/node_selector/node_modules/ws/lib/permessage-deflate.js"(
+    exports2,
+    module2,
+  ) {
     "use strict";
     var zlib = require("zlib");
     var bufferUtil = require_buffer_util();
@@ -194,14 +200,18 @@ var require_permessage_deflate = __commonJS({
        */
       constructor(options) {
         this._options = options || {};
-        this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
+        this._threshold =
+          this._options.threshold !== void 0 ? this._options.threshold : 1024;
         this._maxPayload = this._options.maxPayload | 0;
         this._isServer = !!this._options.isServer;
         this._deflate = null;
         this._inflate = null;
         this.params = null;
         if (!zlibLimiter) {
-          const concurrency = this._options.concurrencyLimit !== void 0 ? this._options.concurrencyLimit : 10;
+          const concurrency =
+            this._options.concurrencyLimit !== void 0
+              ? this._options.concurrencyLimit
+              : 10;
           zlibLimiter = new Limiter(concurrency);
         }
       }
@@ -244,7 +254,9 @@ var require_permessage_deflate = __commonJS({
        */
       accept(configurations) {
         configurations = this.normalizeParams(configurations);
-        this.params = this._isServer ? this.acceptAsServer(configurations) : this.acceptAsClient(configurations);
+        this.params = this._isServer
+          ? this.acceptAsServer(configurations)
+          : this.acceptAsClient(configurations);
         return this.params;
       }
       /**
@@ -264,8 +276,8 @@ var require_permessage_deflate = __commonJS({
           if (callback) {
             callback(
               new Error(
-                "The deflate stream was closed while data was being processed"
-              )
+                "The deflate stream was closed while data was being processed",
+              ),
             );
           }
         }
@@ -280,7 +292,16 @@ var require_permessage_deflate = __commonJS({
       acceptAsServer(offers) {
         const opts = this._options;
         const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
+          if (
+            (opts.serverNoContextTakeover === false &&
+              params.server_no_context_takeover) ||
+            (params.server_max_window_bits &&
+              (opts.serverMaxWindowBits === false ||
+                (typeof opts.serverMaxWindowBits === "number" &&
+                  opts.serverMaxWindowBits > params.server_max_window_bits))) ||
+            (typeof opts.clientMaxWindowBits === "number" &&
+              !params.client_max_window_bits)
+          ) {
             return false;
           }
           return true;
@@ -299,7 +320,10 @@ var require_permessage_deflate = __commonJS({
         }
         if (typeof opts.clientMaxWindowBits === "number") {
           accepted.client_max_window_bits = opts.clientMaxWindowBits;
-        } else if (accepted.client_max_window_bits === true || opts.clientMaxWindowBits === false) {
+        } else if (
+          accepted.client_max_window_bits === true ||
+          opts.clientMaxWindowBits === false
+        ) {
           delete accepted.client_max_window_bits;
         }
         return accepted;
@@ -313,16 +337,23 @@ var require_permessage_deflate = __commonJS({
        */
       acceptAsClient(response) {
         const params = response[0];
-        if (this._options.clientNoContextTakeover === false && params.client_no_context_takeover) {
+        if (
+          this._options.clientNoContextTakeover === false &&
+          params.client_no_context_takeover
+        ) {
           throw new Error('Unexpected parameter "client_no_context_takeover"');
         }
         if (!params.client_max_window_bits) {
           if (typeof this._options.clientMaxWindowBits === "number") {
             params.client_max_window_bits = this._options.clientMaxWindowBits;
           }
-        } else if (this._options.clientMaxWindowBits === false || typeof this._options.clientMaxWindowBits === "number" && params.client_max_window_bits > this._options.clientMaxWindowBits) {
+        } else if (
+          this._options.clientMaxWindowBits === false ||
+          (typeof this._options.clientMaxWindowBits === "number" &&
+            params.client_max_window_bits > this._options.clientMaxWindowBits)
+        ) {
           throw new Error(
-            'Unexpected or invalid parameter "client_max_window_bits"'
+            'Unexpected or invalid parameter "client_max_window_bits"',
           );
         }
         return params;
@@ -339,7 +370,9 @@ var require_permessage_deflate = __commonJS({
           Object.keys(params).forEach((key) => {
             let value = params[key];
             if (value.length > 1) {
-              throw new Error(`Parameter "${key}" must have only a single value`);
+              throw new Error(
+                `Parameter "${key}" must have only a single value`,
+              );
             }
             value = value[0];
             if (key === "client_max_window_bits") {
@@ -347,27 +380,30 @@ var require_permessage_deflate = __commonJS({
                 const num = +value;
                 if (!Number.isInteger(num) || num < 8 || num > 15) {
                   throw new TypeError(
-                    `Invalid value for parameter "${key}": ${value}`
+                    `Invalid value for parameter "${key}": ${value}`,
                   );
                 }
                 value = num;
               } else if (!this._isServer) {
                 throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
+                  `Invalid value for parameter "${key}": ${value}`,
                 );
               }
             } else if (key === "server_max_window_bits") {
               const num = +value;
               if (!Number.isInteger(num) || num < 8 || num > 15) {
                 throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
+                  `Invalid value for parameter "${key}": ${value}`,
                 );
               }
               value = num;
-            } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
+            } else if (
+              key === "client_no_context_takeover" ||
+              key === "server_no_context_takeover"
+            ) {
               if (value !== true) {
                 throw new TypeError(
-                  `Invalid value for parameter "${key}": ${value}`
+                  `Invalid value for parameter "${key}": ${value}`,
                 );
               }
             } else {
@@ -422,10 +458,13 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "client" : "server";
         if (!this._inflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          const windowBits =
+            typeof this.params[key] !== "number"
+              ? zlib.Z_DEFAULT_WINDOWBITS
+              : this.params[key];
           this._inflate = zlib.createInflateRaw({
             ...this._options.zlibInflateOptions,
-            windowBits
+            windowBits,
           });
           this._inflate[kPerMessageDeflate] = this;
           this._inflate[kTotalLength] = 0;
@@ -446,7 +485,7 @@ var require_permessage_deflate = __commonJS({
           }
           const data2 = bufferUtil.concat(
             this._inflate[kBuffers],
-            this._inflate[kTotalLength]
+            this._inflate[kTotalLength],
           );
           if (this._inflate._readableState.endEmitted) {
             this._inflate.close();
@@ -473,10 +512,13 @@ var require_permessage_deflate = __commonJS({
         const endpoint = this._isServer ? "server" : "client";
         if (!this._deflate) {
           const key = `${endpoint}_max_window_bits`;
-          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          const windowBits =
+            typeof this.params[key] !== "number"
+              ? zlib.Z_DEFAULT_WINDOWBITS
+              : this.params[key];
           this._deflate = zlib.createDeflateRaw({
             ...this._options.zlibDeflateOptions,
-            windowBits
+            windowBits,
           });
           this._deflate[kTotalLength] = 0;
           this._deflate[kBuffers] = [];
@@ -490,10 +532,14 @@ var require_permessage_deflate = __commonJS({
           }
           let data2 = bufferUtil.concat(
             this._deflate[kBuffers],
-            this._deflate[kTotalLength]
+            this._deflate[kTotalLength],
           );
           if (fin) {
-            data2 = new FastBuffer(data2.buffer, data2.byteOffset, data2.length - 4);
+            data2 = new FastBuffer(
+              data2.buffer,
+              data2.byteOffset,
+              data2.length - 4,
+            );
           }
           this._deflate[kCallback] = null;
           this._deflate[kTotalLength] = 0;
@@ -512,7 +558,10 @@ var require_permessage_deflate = __commonJS({
     }
     function inflateOnData(chunk) {
       this[kTotalLength] += chunk.length;
-      if (this[kPerMessageDeflate]._maxPayload < 1 || this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload) {
+      if (
+        this[kPerMessageDeflate]._maxPayload < 1 ||
+        this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload
+      ) {
         this[kBuffers].push(chunk);
         return;
       }
@@ -531,7 +580,7 @@ var require_permessage_deflate = __commonJS({
       err[kStatusCode] = 1007;
       this[kCallback](err);
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/validation.js
@@ -541,145 +590,32 @@ var require_validation = __commonJS({
     var { isUtf8 } = require("buffer");
     var { hasBlob } = require_constants();
     var tokenChars = [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       // 0 - 15
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
       // 16 - 31
-      0,
-      1,
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      1,
-      1,
-      0,
-      1,
-      1,
-      0,
+      0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0,
       // 32 - 47
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
       // 48 - 63
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
+      0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
       // 64 - 79
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      0,
-      0,
-      1,
-      1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1,
       // 80 - 95
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
       // 96 - 111
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1,
-      0,
-      1,
-      0,
-      1,
-      0
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0,
       // 112 - 127
     ];
     function isValidStatusCode(code) {
-      return code >= 1e3 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006 || code >= 3e3 && code <= 4999;
+      return (
+        (code >= 1e3 &&
+          code <= 1014 &&
+          code !== 1004 &&
+          code !== 1005 &&
+          code !== 1006) ||
+        (code >= 3e3 && code <= 4999)
+      );
     }
     function _isValidUTF8(buf) {
       const len = buf.length;
@@ -688,19 +624,35 @@ var require_validation = __commonJS({
         if ((buf[i] & 128) === 0) {
           i++;
         } else if ((buf[i] & 224) === 192) {
-          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
+          if (
+            i + 1 === len ||
+            (buf[i + 1] & 192) !== 128 ||
+            (buf[i] & 254) === 192
+          ) {
             return false;
           }
           i += 2;
         } else if ((buf[i] & 240) === 224) {
-          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // Overlong
-          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
+          if (
+            i + 2 >= len ||
+            (buf[i + 1] & 192) !== 128 ||
+            (buf[i + 2] & 192) !== 128 ||
+            (buf[i] === 224 && (buf[i + 1] & 224) === 128) || // Overlong
+            (buf[i] === 237 && (buf[i + 1] & 224) === 160)
+          ) {
             return false;
           }
           i += 3;
         } else if ((buf[i] & 248) === 240) {
-          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // Overlong
-          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
+          if (
+            i + 3 >= len ||
+            (buf[i + 1] & 192) !== 128 ||
+            (buf[i + 2] & 192) !== 128 ||
+            (buf[i + 3] & 192) !== 128 ||
+            (buf[i] === 240 && (buf[i + 1] & 240) === 128) || // Overlong
+            (buf[i] === 244 && buf[i + 1] > 143) ||
+            buf[i] > 244
+          ) {
             return false;
           }
           i += 4;
@@ -711,28 +663,35 @@ var require_validation = __commonJS({
       return true;
     }
     function isBlob(value) {
-      return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
+      return (
+        hasBlob &&
+        typeof value === "object" &&
+        typeof value.arrayBuffer === "function" &&
+        typeof value.type === "string" &&
+        typeof value.stream === "function" &&
+        (value[Symbol.toStringTag] === "Blob" ||
+          value[Symbol.toStringTag] === "File")
+      );
     }
     module2.exports = {
       isBlob,
       isValidStatusCode,
       isValidUTF8: _isValidUTF8,
-      tokenChars
+      tokenChars,
     };
     if (isUtf8) {
-      module2.exports.isValidUTF8 = function(buf) {
+      module2.exports.isValidUTF8 = function (buf) {
         return buf.length < 24 ? _isValidUTF8(buf) : isUtf8(buf);
       };
     } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
       try {
         const isValidUTF8 = require("utf-8-validate");
-        module2.exports.isValidUTF8 = function(buf) {
+        module2.exports.isValidUTF8 = function (buf) {
           return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
         };
-      } catch (e) {
-      }
+      } catch (e) {}
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/receiver.js
@@ -741,12 +700,8 @@ var require_receiver = __commonJS({
     "use strict";
     var { Writable } = require("stream");
     var PerMessageDeflate = require_permessage_deflate();
-    var {
-      BINARY_TYPES,
-      EMPTY_BUFFER,
-      kStatusCode,
-      kWebSocket
-    } = require_constants();
+    var { BINARY_TYPES, EMPTY_BUFFER, kStatusCode, kWebSocket } =
+      require_constants();
     var { concat, toArrayBuffer, unmask } = require_buffer_util();
     var { isValidStatusCode, isValidUTF8 } = require_validation();
     var FastBuffer = Buffer[Symbol.species];
@@ -776,7 +731,10 @@ var require_receiver = __commonJS({
        */
       constructor(options = {}) {
         super();
-        this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
+        this._allowSynchronousEvents =
+          options.allowSynchronousEvents !== void 0
+            ? options.allowSynchronousEvents
+            : true;
         this._binaryType = options.binaryType || BINARY_TYPES[0];
         this._extensions = options.extensions || {};
         this._isServer = !!options.isServer;
@@ -828,7 +786,7 @@ var require_receiver = __commonJS({
           this._buffers[0] = new FastBuffer(
             buf.buffer,
             buf.byteOffset + n,
-            buf.length - n
+            buf.length - n,
           );
           return new FastBuffer(buf.buffer, buf.byteOffset, n);
         }
@@ -843,7 +801,7 @@ var require_receiver = __commonJS({
             this._buffers[0] = new FastBuffer(
               buf.buffer,
               buf.byteOffset + n,
-              buf.length - n
+              buf.length - n,
             );
           }
           n -= buf.length;
@@ -901,7 +859,7 @@ var require_receiver = __commonJS({
             "RSV2 and RSV3 must be clear",
             true,
             1002,
-            "WS_ERR_UNEXPECTED_RSV_2_3"
+            "WS_ERR_UNEXPECTED_RSV_2_3",
           );
           cb(error);
           return;
@@ -913,7 +871,7 @@ var require_receiver = __commonJS({
             "RSV1 must be clear",
             true,
             1002,
-            "WS_ERR_UNEXPECTED_RSV_1"
+            "WS_ERR_UNEXPECTED_RSV_1",
           );
           cb(error);
           return;
@@ -928,7 +886,7 @@ var require_receiver = __commonJS({
               "RSV1 must be clear",
               true,
               1002,
-              "WS_ERR_UNEXPECTED_RSV_1"
+              "WS_ERR_UNEXPECTED_RSV_1",
             );
             cb(error);
             return;
@@ -939,7 +897,7 @@ var require_receiver = __commonJS({
               "invalid opcode 0",
               true,
               1002,
-              "WS_ERR_INVALID_OPCODE"
+              "WS_ERR_INVALID_OPCODE",
             );
             cb(error);
             return;
@@ -952,7 +910,7 @@ var require_receiver = __commonJS({
               `invalid opcode ${this._opcode}`,
               true,
               1002,
-              "WS_ERR_INVALID_OPCODE"
+              "WS_ERR_INVALID_OPCODE",
             );
             cb(error);
             return;
@@ -965,7 +923,7 @@ var require_receiver = __commonJS({
               "FIN must be set",
               true,
               1002,
-              "WS_ERR_EXPECTED_FIN"
+              "WS_ERR_EXPECTED_FIN",
             );
             cb(error);
             return;
@@ -976,18 +934,21 @@ var require_receiver = __commonJS({
               "RSV1 must be clear",
               true,
               1002,
-              "WS_ERR_UNEXPECTED_RSV_1"
+              "WS_ERR_UNEXPECTED_RSV_1",
             );
             cb(error);
             return;
           }
-          if (this._payloadLength > 125 || this._opcode === 8 && this._payloadLength === 1) {
+          if (
+            this._payloadLength > 125 ||
+            (this._opcode === 8 && this._payloadLength === 1)
+          ) {
             const error = this.createError(
               RangeError,
               `invalid payload length ${this._payloadLength}`,
               true,
               1002,
-              "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH"
+              "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH",
             );
             cb(error);
             return;
@@ -998,7 +959,7 @@ var require_receiver = __commonJS({
             `invalid opcode ${this._opcode}`,
             true,
             1002,
-            "WS_ERR_INVALID_OPCODE"
+            "WS_ERR_INVALID_OPCODE",
           );
           cb(error);
           return;
@@ -1012,7 +973,7 @@ var require_receiver = __commonJS({
               "MASK must be set",
               true,
               1002,
-              "WS_ERR_EXPECTED_MASK"
+              "WS_ERR_EXPECTED_MASK",
             );
             cb(error);
             return;
@@ -1023,13 +984,14 @@ var require_receiver = __commonJS({
             "MASK must be clear",
             true,
             1002,
-            "WS_ERR_UNEXPECTED_MASK"
+            "WS_ERR_UNEXPECTED_MASK",
           );
           cb(error);
           return;
         }
         if (this._payloadLength === 126) this._state = GET_PAYLOAD_LENGTH_16;
-        else if (this._payloadLength === 127) this._state = GET_PAYLOAD_LENGTH_64;
+        else if (this._payloadLength === 127)
+          this._state = GET_PAYLOAD_LENGTH_64;
         else this.haveLength(cb);
       }
       /**
@@ -1065,7 +1027,7 @@ var require_receiver = __commonJS({
             "Unsupported WebSocket frame: payload length > 2^53 - 1",
             false,
             1009,
-            "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH"
+            "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH",
           );
           cb(error);
           return;
@@ -1082,13 +1044,16 @@ var require_receiver = __commonJS({
       haveLength(cb) {
         if (this._payloadLength && this._opcode < 8) {
           this._totalPayloadLength += this._payloadLength;
-          if (this._totalPayloadLength > this._maxPayload && this._maxPayload > 0) {
+          if (
+            this._totalPayloadLength > this._maxPayload &&
+            this._maxPayload > 0
+          ) {
             const error = this.createError(
               RangeError,
               "Max payload size exceeded",
               false,
               1009,
-              "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH",
             );
             cb(error);
             return;
@@ -1124,7 +1089,11 @@ var require_receiver = __commonJS({
             return;
           }
           data = this.consume(this._payloadLength);
-          if (this._masked && (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !== 0) {
+          if (
+            this._masked &&
+            (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !==
+              0
+          ) {
             unmask(data, this._mask);
           }
         }
@@ -1151,18 +1120,22 @@ var require_receiver = __commonJS({
        * @private
        */
       decompress(data, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate =
+          this._extensions[PerMessageDeflate.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
           if (err) return cb(err);
           if (buf.length) {
             this._messageLength += buf.length;
-            if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
+            if (
+              this._messageLength > this._maxPayload &&
+              this._maxPayload > 0
+            ) {
               const error = this.createError(
                 RangeError,
                 "Max payload size exceeded",
                 false,
                 1009,
-                "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+                "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH",
               );
               cb(error);
               return;
@@ -1220,7 +1193,7 @@ var require_receiver = __commonJS({
               "invalid UTF-8 sequence",
               true,
               1007,
-              "WS_ERR_INVALID_UTF8"
+              "WS_ERR_INVALID_UTF8",
             );
             cb(error);
             return;
@@ -1259,7 +1232,7 @@ var require_receiver = __commonJS({
                 `invalid status code ${code}`,
                 true,
                 1002,
-                "WS_ERR_INVALID_CLOSE_CODE"
+                "WS_ERR_INVALID_CLOSE_CODE",
               );
               cb(error);
               return;
@@ -1267,7 +1240,7 @@ var require_receiver = __commonJS({
             const buf = new FastBuffer(
               data.buffer,
               data.byteOffset + 2,
-              data.length - 2
+              data.length - 2,
             );
             if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
               const error = this.createError(
@@ -1275,7 +1248,7 @@ var require_receiver = __commonJS({
                 "invalid UTF-8 sequence",
                 true,
                 1007,
-                "WS_ERR_INVALID_UTF8"
+                "WS_ERR_INVALID_UTF8",
               );
               cb(error);
               return;
@@ -1315,7 +1288,7 @@ var require_receiver = __commonJS({
         this._loop = false;
         this._errored = true;
         const err = new ErrorCtor(
-          prefix ? `Invalid WebSocket frame: ${message}` : message
+          prefix ? `Invalid WebSocket frame: ${message}` : message,
         );
         Error.captureStackTrace(err, this.createError);
         err.code = errorCode;
@@ -1324,7 +1297,7 @@ var require_receiver = __commonJS({
       }
     };
     module2.exports = Receiver;
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/sender.js
@@ -1417,7 +1390,10 @@ var require_sender = __commonJS({
         }
         let dataLength;
         if (typeof data === "string") {
-          if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) {
+          if (
+            (!options.mask || skipMasking) &&
+            options[kByteLength] !== void 0
+          ) {
             dataLength = options[kByteLength];
           } else {
             data = Buffer.from(data);
@@ -1473,14 +1449,18 @@ var require_sender = __commonJS({
         if (code === void 0) {
           buf = EMPTY_BUFFER;
         } else if (typeof code !== "number" || !isValidStatusCode(code)) {
-          throw new TypeError("First argument must be a valid error code number");
+          throw new TypeError(
+            "First argument must be a valid error code number",
+          );
         } else if (data === void 0 || !data.length) {
           buf = Buffer.allocUnsafe(2);
           buf.writeUInt16BE(code, 0);
         } else {
           const length = Buffer.byteLength(data);
           if (length > 123) {
-            throw new RangeError("The message must not be greater than 123 bytes");
+            throw new RangeError(
+              "The message must not be greater than 123 bytes",
+            );
           }
           buf = Buffer.allocUnsafe(2 + length);
           buf.writeUInt16BE(code, 0);
@@ -1498,7 +1478,7 @@ var require_sender = __commonJS({
           maskBuffer: this._maskBuffer,
           opcode: 8,
           readOnly: false,
-          rsv1: false
+          rsv1: false,
         };
         if (this._state !== DEFAULT) {
           this.enqueue([this.dispatch, buf, false, options, cb]);
@@ -1529,7 +1509,9 @@ var require_sender = __commonJS({
           readOnly = toBuffer.readOnly;
         }
         if (byteLength > 125) {
-          throw new RangeError("The data size must not be greater than 125 bytes");
+          throw new RangeError(
+            "The data size must not be greater than 125 bytes",
+          );
         }
         const options = {
           [kByteLength]: byteLength,
@@ -1539,7 +1521,7 @@ var require_sender = __commonJS({
           maskBuffer: this._maskBuffer,
           opcode: 9,
           readOnly,
-          rsv1: false
+          rsv1: false,
         };
         if (isBlob(data)) {
           if (this._state !== DEFAULT) {
@@ -1576,7 +1558,9 @@ var require_sender = __commonJS({
           readOnly = toBuffer.readOnly;
         }
         if (byteLength > 125) {
-          throw new RangeError("The data size must not be greater than 125 bytes");
+          throw new RangeError(
+            "The data size must not be greater than 125 bytes",
+          );
         }
         const options = {
           [kByteLength]: byteLength,
@@ -1586,7 +1570,7 @@ var require_sender = __commonJS({
           maskBuffer: this._maskBuffer,
           opcode: 10,
           readOnly,
-          rsv1: false
+          rsv1: false,
         };
         if (isBlob(data)) {
           if (this._state !== DEFAULT) {
@@ -1617,7 +1601,8 @@ var require_sender = __commonJS({
        * @public
        */
       send(data, options, cb) {
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate =
+          this._extensions[PerMessageDeflate.extensionName];
         let opcode = options.binary ? 2 : 1;
         let rsv1 = options.compress;
         let byteLength;
@@ -1635,7 +1620,15 @@ var require_sender = __commonJS({
         }
         if (this._firstFragment) {
           this._firstFragment = false;
-          if (rsv1 && perMessageDeflate && perMessageDeflate.params[perMessageDeflate._isServer ? "server_no_context_takeover" : "client_no_context_takeover"]) {
+          if (
+            rsv1 &&
+            perMessageDeflate &&
+            perMessageDeflate.params[
+              perMessageDeflate._isServer
+                ? "server_no_context_takeover"
+                : "client_no_context_takeover"
+            ]
+          ) {
             rsv1 = byteLength >= perMessageDeflate._threshold;
           }
           this._compress = rsv1;
@@ -1652,7 +1645,7 @@ var require_sender = __commonJS({
           maskBuffer: this._maskBuffer,
           opcode,
           readOnly,
-          rsv1
+          rsv1,
         };
         if (isBlob(data)) {
           if (this._state !== DEFAULT) {
@@ -1692,26 +1685,29 @@ var require_sender = __commonJS({
       getBlobData(blob, compress, options, cb) {
         this._bufferedBytes += options[kByteLength];
         this._state = GET_BLOB_DATA;
-        blob.arrayBuffer().then((arrayBuffer) => {
-          if (this._socket.destroyed) {
-            const err = new Error(
-              "The socket was closed while the blob was being read"
-            );
-            process.nextTick(callCallbacks, this, err, cb);
-            return;
-          }
-          this._bufferedBytes -= options[kByteLength];
-          const data = toBuffer(arrayBuffer);
-          if (!compress) {
-            this._state = DEFAULT;
-            this.sendFrame(_Sender.frame(data, options), cb);
-            this.dequeue();
-          } else {
-            this.dispatch(data, compress, options, cb);
-          }
-        }).catch((err) => {
-          process.nextTick(onError, this, err, cb);
-        });
+        blob
+          .arrayBuffer()
+          .then((arrayBuffer) => {
+            if (this._socket.destroyed) {
+              const err = new Error(
+                "The socket was closed while the blob was being read",
+              );
+              process.nextTick(callCallbacks, this, err, cb);
+              return;
+            }
+            this._bufferedBytes -= options[kByteLength];
+            const data = toBuffer(arrayBuffer);
+            if (!compress) {
+              this._state = DEFAULT;
+              this.sendFrame(_Sender.frame(data, options), cb);
+              this.dequeue();
+            } else {
+              this.dispatch(data, compress, options, cb);
+            }
+          })
+          .catch((err) => {
+            process.nextTick(onError, this, err, cb);
+          });
       }
       /**
        * Dispatches a message.
@@ -1741,13 +1737,14 @@ var require_sender = __commonJS({
           this.sendFrame(_Sender.frame(data, options), cb);
           return;
         }
-        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        const perMessageDeflate =
+          this._extensions[PerMessageDeflate.extensionName];
         this._bufferedBytes += options[kByteLength];
         this._state = DEFLATING;
         perMessageDeflate.compress(data, options.fin, (_, buf) => {
           if (this._socket.destroyed) {
             const err = new Error(
-              "The socket was closed while data was being compressed"
+              "The socket was closed while data was being compressed",
             );
             callCallbacks(this, err, cb);
             return;
@@ -1812,7 +1809,7 @@ var require_sender = __commonJS({
       callCallbacks(sender, err, cb);
       sender.onerror(err);
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/event-target.js
@@ -1872,7 +1869,8 @@ var require_event_target = __commonJS({
         super(type);
         this[kCode] = options.code === void 0 ? 0 : options.code;
         this[kReason] = options.reason === void 0 ? "" : options.reason;
-        this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
+        this[kWasClean] =
+          options.wasClean === void 0 ? false : options.wasClean;
       }
       /**
        * @type {Number}
@@ -1895,7 +1893,9 @@ var require_event_target = __commonJS({
     };
     Object.defineProperty(CloseEvent.prototype, "code", { enumerable: true });
     Object.defineProperty(CloseEvent.prototype, "reason", { enumerable: true });
-    Object.defineProperty(CloseEvent.prototype, "wasClean", { enumerable: true });
+    Object.defineProperty(CloseEvent.prototype, "wasClean", {
+      enumerable: true,
+    });
     var ErrorEvent = class extends Event {
       /**
        * Create a new `ErrorEvent`.
@@ -1925,7 +1925,9 @@ var require_event_target = __commonJS({
       }
     };
     Object.defineProperty(ErrorEvent.prototype, "error", { enumerable: true });
-    Object.defineProperty(ErrorEvent.prototype, "message", { enumerable: true });
+    Object.defineProperty(ErrorEvent.prototype, "message", {
+      enumerable: true,
+    });
     var MessageEvent = class extends Event {
       /**
        * Create a new `MessageEvent`.
@@ -1962,7 +1964,11 @@ var require_event_target = __commonJS({
        */
       addEventListener(type, handler, options = {}) {
         for (const listener of this.listeners(type)) {
-          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (
+            !options[kForOnEventAttribute] &&
+            listener[kListener] === handler &&
+            !listener[kForOnEventAttribute]
+          ) {
             return;
           }
         }
@@ -1970,7 +1976,7 @@ var require_event_target = __commonJS({
         if (type === "message") {
           wrapper = function onMessage(data, isBinary) {
             const event = new MessageEvent("message", {
-              data: isBinary ? data : data.toString()
+              data: isBinary ? data : data.toString(),
             });
             event[kTarget] = this;
             callListener(handler, this, event);
@@ -1980,7 +1986,7 @@ var require_event_target = __commonJS({
             const event = new CloseEvent("close", {
               code,
               reason: message.toString(),
-              wasClean: this._closeFrameReceived && this._closeFrameSent
+              wasClean: this._closeFrameReceived && this._closeFrameSent,
             });
             event[kTarget] = this;
             callListener(handler, this, event);
@@ -1989,7 +1995,7 @@ var require_event_target = __commonJS({
           wrapper = function onError(error) {
             const event = new ErrorEvent("error", {
               error,
-              message: error.message
+              message: error.message,
             });
             event[kTarget] = this;
             callListener(handler, this, event);
@@ -2020,19 +2026,22 @@ var require_event_target = __commonJS({
        */
       removeEventListener(type, handler) {
         for (const listener of this.listeners(type)) {
-          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+          if (
+            listener[kListener] === handler &&
+            !listener[kForOnEventAttribute]
+          ) {
             this.removeListener(type, listener);
             break;
           }
         }
-      }
+      },
     };
     module2.exports = {
       CloseEvent,
       ErrorEvent,
       Event,
       EventTarget,
-      MessageEvent
+      MessageEvent,
     };
     function callListener(listener, thisArg, event) {
       if (typeof listener === "object" && listener.handleEvent) {
@@ -2041,7 +2050,7 @@ var require_event_target = __commonJS({
         listener.call(thisArg, event);
       }
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/extension.js
@@ -2179,22 +2188,30 @@ var require_extension = __commonJS({
       return offers;
     }
     function format(extensions) {
-      return Object.keys(extensions).map((extension) => {
-        let configurations = extensions[extension];
-        if (!Array.isArray(configurations)) configurations = [configurations];
-        return configurations.map((params) => {
-          return [extension].concat(
-            Object.keys(params).map((k) => {
-              let values = params[k];
-              if (!Array.isArray(values)) values = [values];
-              return values.map((v) => v === true ? k : `${k}=${v}`).join("; ");
+      return Object.keys(extensions)
+        .map((extension) => {
+          let configurations = extensions[extension];
+          if (!Array.isArray(configurations)) configurations = [configurations];
+          return configurations
+            .map((params) => {
+              return [extension]
+                .concat(
+                  Object.keys(params).map((k) => {
+                    let values = params[k];
+                    if (!Array.isArray(values)) values = [values];
+                    return values
+                      .map((v) => (v === true ? k : `${k}=${v}`))
+                      .join("; ");
+                  }),
+                )
+                .join("; ");
             })
-          ).join("; ");
-        }).join(", ");
-      }).join(", ");
+            .join(", ");
+        })
+        .join(", ");
     }
     module2.exports = { format, parse };
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/websocket.js
@@ -2222,10 +2239,10 @@ var require_websocket = __commonJS({
       kListener,
       kStatusCode,
       kWebSocket,
-      NOOP
+      NOOP,
     } = require_constants();
     var {
-      EventTarget: { addEventListener, removeEventListener }
+      EventTarget: { addEventListener, removeEventListener },
     } = require_event_target();
     var { format, parse } = require_extension();
     var { toBuffer } = require_buffer_util();
@@ -2380,9 +2397,13 @@ var require_websocket = __commonJS({
           extensions: this._extensions,
           isServer: this._isServer,
           maxPayload: options.maxPayload,
-          skipUTF8Validation: options.skipUTF8Validation
+          skipUTF8Validation: options.skipUTF8Validation,
         });
-        const sender = new Sender(socket, this._extensions, options.generateMask);
+        const sender = new Sender(
+          socket,
+          this._extensions,
+          options.generateMask,
+        );
         this._receiver = receiver;
         this._sender = sender;
         this._socket = socket;
@@ -2447,12 +2468,17 @@ var require_websocket = __commonJS({
       close(code, data) {
         if (this.readyState === _WebSocket.CLOSED) return;
         if (this.readyState === _WebSocket.CONNECTING) {
-          const msg = "WebSocket was closed before the connection was established";
+          const msg =
+            "WebSocket was closed before the connection was established";
           abortHandshake(this, this._req, msg);
           return;
         }
         if (this.readyState === _WebSocket.CLOSING) {
-          if (this._closeFrameSent && (this._closeFrameReceived || this._receiver._writableState.errorEmitted)) {
+          if (
+            this._closeFrameSent &&
+            (this._closeFrameReceived ||
+              this._receiver._writableState.errorEmitted)
+          ) {
             this._socket.end();
           }
           return;
@@ -2461,7 +2487,10 @@ var require_websocket = __commonJS({
         this._sender.close(code, data, !this._isServer, (err) => {
           if (err) return;
           this._closeFrameSent = true;
-          if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) {
+          if (
+            this._closeFrameReceived ||
+            this._receiver._writableState.errorEmitted
+          ) {
             this._socket.end();
           }
         });
@@ -2473,7 +2502,10 @@ var require_websocket = __commonJS({
        * @public
        */
       pause() {
-        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+        if (
+          this.readyState === _WebSocket.CONNECTING ||
+          this.readyState === _WebSocket.CLOSED
+        ) {
           return;
         }
         this._paused = true;
@@ -2539,7 +2571,10 @@ var require_websocket = __commonJS({
        * @public
        */
       resume() {
-        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+        if (
+          this.readyState === _WebSocket.CONNECTING ||
+          this.readyState === _WebSocket.CLOSED
+        ) {
           return;
         }
         this._paused = false;
@@ -2578,7 +2613,7 @@ var require_websocket = __commonJS({
           mask: !this._isServer,
           compress: true,
           fin: true,
-          ...options
+          ...options,
         };
         if (!this._extensions[PerMessageDeflate.extensionName]) {
           opts.compress = false;
@@ -2593,7 +2628,8 @@ var require_websocket = __commonJS({
       terminate() {
         if (this.readyState === _WebSocket.CLOSED) return;
         if (this.readyState === _WebSocket.CONNECTING) {
-          const msg = "WebSocket was closed before the connection was established";
+          const msg =
+            "WebSocket was closed before the connection was established";
           abortHandshake(this, this._req, msg);
           return;
         }
@@ -2605,35 +2641,35 @@ var require_websocket = __commonJS({
     };
     Object.defineProperty(WebSocket2, "CONNECTING", {
       enumerable: true,
-      value: readyStates.indexOf("CONNECTING")
+      value: readyStates.indexOf("CONNECTING"),
     });
     Object.defineProperty(WebSocket2.prototype, "CONNECTING", {
       enumerable: true,
-      value: readyStates.indexOf("CONNECTING")
+      value: readyStates.indexOf("CONNECTING"),
     });
     Object.defineProperty(WebSocket2, "OPEN", {
       enumerable: true,
-      value: readyStates.indexOf("OPEN")
+      value: readyStates.indexOf("OPEN"),
     });
     Object.defineProperty(WebSocket2.prototype, "OPEN", {
       enumerable: true,
-      value: readyStates.indexOf("OPEN")
+      value: readyStates.indexOf("OPEN"),
     });
     Object.defineProperty(WebSocket2, "CLOSING", {
       enumerable: true,
-      value: readyStates.indexOf("CLOSING")
+      value: readyStates.indexOf("CLOSING"),
     });
     Object.defineProperty(WebSocket2.prototype, "CLOSING", {
       enumerable: true,
-      value: readyStates.indexOf("CLOSING")
+      value: readyStates.indexOf("CLOSING"),
     });
     Object.defineProperty(WebSocket2, "CLOSED", {
       enumerable: true,
-      value: readyStates.indexOf("CLOSED")
+      value: readyStates.indexOf("CLOSED"),
     });
     Object.defineProperty(WebSocket2.prototype, "CLOSED", {
       enumerable: true,
-      value: readyStates.indexOf("CLOSED")
+      value: readyStates.indexOf("CLOSED"),
     });
     [
       "binaryType",
@@ -2642,9 +2678,11 @@ var require_websocket = __commonJS({
       "isPaused",
       "protocol",
       "readyState",
-      "url"
+      "url",
     ].forEach((property) => {
-      Object.defineProperty(WebSocket2.prototype, property, { enumerable: true });
+      Object.defineProperty(WebSocket2.prototype, property, {
+        enumerable: true,
+      });
     });
     ["open", "error", "close", "message"].forEach((method) => {
       Object.defineProperty(WebSocket2.prototype, `on${method}`, {
@@ -2664,9 +2702,9 @@ var require_websocket = __commonJS({
           }
           if (typeof handler !== "function") return;
           this.addEventListener(method, handler, {
-            [kForOnEventAttribute]: true
+            [kForOnEventAttribute]: true,
           });
-        }
+        },
       });
     });
     WebSocket2.prototype.addEventListener = addEventListener;
@@ -2691,13 +2729,13 @@ var require_websocket = __commonJS({
         method: "GET",
         host: void 0,
         path: void 0,
-        port: void 0
+        port: void 0,
       };
       websocket._autoPong = opts.autoPong;
       websocket._closeTimeout = opts.closeTimeout;
       if (!protocolVersions.includes(opts.protocolVersion)) {
         throw new RangeError(
-          `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`
+          `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`,
         );
       }
       let parsedUrl;
@@ -2740,16 +2778,19 @@ var require_websocket = __commonJS({
       const request = isSecure ? https.request : http2.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
-      opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
+      opts.createConnection =
+        opts.createConnection || (isSecure ? tlsConnect : netConnect);
       opts.defaultPort = opts.defaultPort || defaultPort;
       opts.port = parsedUrl.port || defaultPort;
-      opts.host = parsedUrl.hostname.startsWith("[") ? parsedUrl.hostname.slice(1, -1) : parsedUrl.hostname;
+      opts.host = parsedUrl.hostname.startsWith("[")
+        ? parsedUrl.hostname.slice(1, -1)
+        : parsedUrl.hostname;
       opts.headers = {
         ...opts.headers,
         "Sec-WebSocket-Version": opts.protocolVersion,
         "Sec-WebSocket-Key": key,
         Connection: "Upgrade",
-        Upgrade: "websocket"
+        Upgrade: "websocket",
       };
       opts.path = parsedUrl.pathname + parsedUrl.search;
       opts.timeout = opts.handshakeTimeout;
@@ -2757,17 +2798,21 @@ var require_websocket = __commonJS({
         perMessageDeflate = new PerMessageDeflate({
           ...opts.perMessageDeflate,
           isServer: false,
-          maxPayload: opts.maxPayload
+          maxPayload: opts.maxPayload,
         });
         opts.headers["Sec-WebSocket-Extensions"] = format({
-          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+          [PerMessageDeflate.extensionName]: perMessageDeflate.offer(),
         });
       }
       if (protocols.length) {
         for (const protocol of protocols) {
-          if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) {
+          if (
+            typeof protocol !== "string" ||
+            !subprotocolRegex.test(protocol) ||
+            protocolSet.has(protocol)
+          ) {
             throw new SyntaxError(
-              "An invalid or duplicated subprotocol was specified"
+              "An invalid or duplicated subprotocol was specified",
             );
           }
           protocolSet.add(protocol);
@@ -2794,7 +2839,9 @@ var require_websocket = __commonJS({
         if (websocket._redirects === 0) {
           websocket._originalIpc = isIpcUrl;
           websocket._originalSecure = isSecure;
-          websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
+          websocket._originalHostOrSocketPath = isIpcUrl
+            ? opts.socketPath
+            : parsedUrl.host;
           const headers = options && options.headers;
           options = { ...options, headers: {} };
           if (headers) {
@@ -2803,8 +2850,14 @@ var require_websocket = __commonJS({
             }
           }
         } else if (websocket.listenerCount("redirect") === 0) {
-          const isSameHost = isIpcUrl ? websocket._originalIpc ? opts.socketPath === websocket._originalHostOrSocketPath : false : websocket._originalIpc ? false : parsedUrl.host === websocket._originalHostOrSocketPath;
-          if (!isSameHost || websocket._originalSecure && !isSecure) {
+          const isSameHost = isIpcUrl
+            ? websocket._originalIpc
+              ? opts.socketPath === websocket._originalHostOrSocketPath
+              : false
+            : websocket._originalIpc
+              ? false
+              : parsedUrl.host === websocket._originalHostOrSocketPath;
+          if (!isSameHost || (websocket._originalSecure && !isSecure)) {
             delete opts.headers.authorization;
             delete opts.headers.cookie;
             if (!isSameHost) delete opts.headers.host;
@@ -2812,7 +2865,8 @@ var require_websocket = __commonJS({
           }
         }
         if (opts.auth && !options.headers.authorization) {
-          options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
+          options.headers.authorization =
+            "Basic " + Buffer.from(opts.auth).toString("base64");
         }
         req = websocket._req = request(opts);
         if (websocket._redirects) {
@@ -2834,7 +2888,12 @@ var require_websocket = __commonJS({
       req.on("response", (res) => {
         const location = res.headers.location;
         const statusCode = res.statusCode;
-        if (location && opts.followRedirects && statusCode >= 300 && statusCode < 400) {
+        if (
+          location &&
+          opts.followRedirects &&
+          statusCode >= 300 &&
+          statusCode < 400
+        ) {
           if (++websocket._redirects > opts.maxRedirects) {
             abortHandshake(websocket, req, "Maximum redirects exceeded");
             return;
@@ -2853,7 +2912,7 @@ var require_websocket = __commonJS({
           abortHandshake(
             websocket,
             req,
-            `Unexpected server response: ${res.statusCode}`
+            `Unexpected server response: ${res.statusCode}`,
           );
         }
       });
@@ -2866,9 +2925,15 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash("sha1")
+          .update(key + GUID)
+          .digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
-          abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
+          abortHandshake(
+            websocket,
+            socket,
+            "Invalid Sec-WebSocket-Accept header",
+          );
           return;
         }
         const serverProt = res.headers["sec-websocket-protocol"];
@@ -2890,7 +2955,8 @@ var require_websocket = __commonJS({
         const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
         if (secWebSocketExtensions !== void 0) {
           if (!perMessageDeflate) {
-            const message = "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
+            const message =
+              "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
             abortHandshake(websocket, socket, message);
             return;
           }
@@ -2903,25 +2969,32 @@ var require_websocket = __commonJS({
             return;
           }
           const extensionNames = Object.keys(extensions);
-          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
-            const message = "Server indicated an extension that was not requested";
+          if (
+            extensionNames.length !== 1 ||
+            extensionNames[0] !== PerMessageDeflate.extensionName
+          ) {
+            const message =
+              "Server indicated an extension that was not requested";
             abortHandshake(websocket, socket, message);
             return;
           }
           try {
-            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+            perMessageDeflate.accept(
+              extensions[PerMessageDeflate.extensionName],
+            );
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
             return;
           }
-          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+          websocket._extensions[PerMessageDeflate.extensionName] =
+            perMessageDeflate;
         }
         websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
           maxPayload: opts.maxPayload,
-          skipUTF8Validation: opts.skipUTF8Validation
+          skipUTF8Validation: opts.skipUTF8Validation,
         });
       });
       if (opts.finishRequest) {
@@ -2972,7 +3045,7 @@ var require_websocket = __commonJS({
       }
       if (cb) {
         const err = new Error(
-          `WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`
+          `WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`,
         );
         process.nextTick(cb, err);
       }
@@ -3037,7 +3110,7 @@ var require_websocket = __commonJS({
     function setCloseTimer(websocket) {
       websocket._closeTimer = setTimeout(
         websocket._socket.destroy.bind(websocket._socket),
-        websocket._closeTimeout
+        websocket._closeTimeout,
       );
     }
     function socketOnClose() {
@@ -3046,14 +3119,22 @@ var require_websocket = __commonJS({
       this.removeListener("data", socketOnData);
       this.removeListener("end", socketOnEnd);
       websocket._readyState = WebSocket2.CLOSING;
-      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
+      if (
+        !this._readableState.endEmitted &&
+        !websocket._closeFrameReceived &&
+        !websocket._receiver._writableState.errorEmitted &&
+        this._readableState.length !== 0
+      ) {
         const chunk = this.read(this._readableState.length);
         websocket._receiver.write(chunk);
       }
       websocket._receiver.end();
       this[kWebSocket] = void 0;
       clearTimeout(websocket._closeTimer);
-      if (websocket._receiver._writableState.finished || websocket._receiver._writableState.errorEmitted) {
+      if (
+        websocket._receiver._writableState.finished ||
+        websocket._receiver._writableState.errorEmitted
+      ) {
         websocket.emitClose();
       } else {
         websocket._receiver.on("error", receiverOnFinish);
@@ -3080,7 +3161,7 @@ var require_websocket = __commonJS({
         this.destroy();
       }
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/stream.js
@@ -3111,10 +3192,11 @@ var require_stream = __commonJS({
         autoDestroy: false,
         emitClose: false,
         objectMode: false,
-        writableObjectMode: false
+        writableObjectMode: false,
       });
       ws.on("message", function message(msg, isBinary) {
-        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+        const data =
+          !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
         if (!duplex.push(data)) ws.pause();
       });
       ws.once("error", function error(err) {
@@ -3126,7 +3208,7 @@ var require_stream = __commonJS({
         if (duplex.destroyed) return;
         duplex.push(null);
       });
-      duplex._destroy = function(err, callback) {
+      duplex._destroy = function (err, callback) {
         if (ws.readyState === ws.CLOSED) {
           callback(err);
           process.nextTick(emitClose, duplex);
@@ -3143,7 +3225,7 @@ var require_stream = __commonJS({
         });
         if (terminateOnDestroy) ws.terminate();
       };
-      duplex._final = function(callback) {
+      duplex._final = function (callback) {
         if (ws.readyState === ws.CONNECTING) {
           ws.once("open", function open() {
             duplex._final(callback);
@@ -3161,10 +3243,10 @@ var require_stream = __commonJS({
           ws.close();
         }
       };
-      duplex._read = function() {
+      duplex._read = function () {
         if (ws.isPaused) ws.resume();
       };
-      duplex._write = function(chunk, encoding, callback) {
+      duplex._write = function (chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
           ws.once("open", function open() {
             duplex._write(chunk, encoding, callback);
@@ -3178,7 +3260,7 @@ var require_stream = __commonJS({
       return duplex;
     }
     module2.exports = createWebSocketStream;
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/subprotocol.js
@@ -3204,7 +3286,9 @@ var require_subprotocol = __commonJS({
           if (end === -1) end = i;
           const protocol2 = header.slice(start, end);
           if (protocols.has(protocol2)) {
-            throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
+            throw new SyntaxError(
+              `The "${protocol2}" subprotocol is duplicated`,
+            );
           }
           protocols.add(protocol2);
           start = end = -1;
@@ -3223,12 +3307,15 @@ var require_subprotocol = __commonJS({
       return protocols;
     }
     module2.exports = { parse };
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "host/node_selector/node_modules/ws/lib/websocket-server.js"(exports2, module2) {
+  "host/node_selector/node_modules/ws/lib/websocket-server.js"(
+    exports2,
+    module2,
+  ) {
     "use strict";
     var EventEmitter = require("events");
     var http2 = require("http");
@@ -3298,11 +3385,15 @@ var require_websocket_server = __commonJS({
           path: null,
           port: null,
           WebSocket: WebSocket2,
-          ...options
+          ...options,
         };
-        if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
+        if (
+          (options.port == null && !options.server && !options.noServer) ||
+          (options.port != null && (options.server || options.noServer)) ||
+          (options.server && options.noServer)
+        ) {
           throw new TypeError(
-            'One and only one of the "port", "server", or "noServer" options must be specified'
+            'One and only one of the "port", "server", or "noServer" options must be specified',
           );
         }
         if (options.port != null) {
@@ -3310,7 +3401,7 @@ var require_websocket_server = __commonJS({
             const body = http2.STATUS_CODES[426];
             res.writeHead(426, {
               "Content-Length": body.length,
-              "Content-Type": "text/plain"
+              "Content-Type": "text/plain",
             });
             res.end(body);
           });
@@ -3318,7 +3409,7 @@ var require_websocket_server = __commonJS({
             options.port,
             options.host,
             options.backlog,
-            callback
+            callback,
           );
         } else if (options.server) {
           this._server = options.server;
@@ -3330,7 +3421,7 @@ var require_websocket_server = __commonJS({
             error: this.emit.bind(this, "error"),
             upgrade: (req, socket, head) => {
               this.handleUpgrade(req, socket, head, emitConnection);
-            }
+            },
           });
         }
         if (options.perMessageDeflate === true) options.perMessageDeflate = {};
@@ -3447,7 +3538,7 @@ var require_websocket_server = __commonJS({
         if (version !== 13 && version !== 8) {
           const message = "Missing or invalid Sec-WebSocket-Version header";
           abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
-            "Sec-WebSocket-Version": "13, 8"
+            "Sec-WebSocket-Version": "13, 8",
           });
           return;
         }
@@ -3468,11 +3559,14 @@ var require_websocket_server = __commonJS({
         }
         const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
         const extensions = {};
-        if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
+        if (
+          this.options.perMessageDeflate &&
+          secWebSocketExtensions !== void 0
+        ) {
           const perMessageDeflate = new PerMessageDeflate({
             ...this.options.perMessageDeflate,
             isServer: true,
-            maxPayload: this.options.maxPayload
+            maxPayload: this.options.maxPayload,
           });
           try {
             const offers = extension.parse(secWebSocketExtensions);
@@ -3481,35 +3575,43 @@ var require_websocket_server = __commonJS({
               extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
             }
           } catch (err) {
-            const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
+            const message =
+              "Invalid or unacceptable Sec-WebSocket-Extensions header";
             abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
             return;
           }
         }
         if (this.options.verifyClient) {
           const info = {
-            origin: req.headers[`${version === 8 ? "sec-websocket-origin" : "origin"}`],
+            origin:
+              req.headers[
+                `${version === 8 ? "sec-websocket-origin" : "origin"}`
+              ],
             secure: !!(req.socket.authorized || req.socket.encrypted),
-            req
+            req,
           };
           if (this.options.verifyClient.length === 2) {
-            this.options.verifyClient(info, (verified, code, message, headers) => {
-              if (!verified) {
-                return abortHandshake(socket, code || 401, message, headers);
-              }
-              this.completeUpgrade(
-                extensions,
-                key,
-                protocols,
-                req,
-                socket,
-                head,
-                cb
-              );
-            });
+            this.options.verifyClient(
+              info,
+              (verified, code, message, headers) => {
+                if (!verified) {
+                  return abortHandshake(socket, code || 401, message, headers);
+                }
+                this.completeUpgrade(
+                  extensions,
+                  key,
+                  protocols,
+                  req,
+                  socket,
+                  head,
+                  cb,
+                );
+              },
+            );
             return;
           }
-          if (!this.options.verifyClient(info)) return abortHandshake(socket, 401);
+          if (!this.options.verifyClient(info))
+            return abortHandshake(socket, 401);
         }
         this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
       }
@@ -3530,20 +3632,24 @@ var require_websocket_server = __commonJS({
         if (!socket.readable || !socket.writable) return socket.destroy();
         if (socket[kWebSocket]) {
           throw new Error(
-            "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
+            "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration",
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash("sha1")
+          .update(key + GUID)
+          .digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
           "Connection: Upgrade",
-          `Sec-WebSocket-Accept: ${digest}`
+          `Sec-WebSocket-Accept: ${digest}`,
         ];
         const ws = new this.options.WebSocket(null, void 0, this.options);
         if (protocols.size) {
-          const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
+          const protocol = this.options.handleProtocols
+            ? this.options.handleProtocols(protocols, req)
+            : protocols.values().next().value;
           if (protocol) {
             headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
             ws._protocol = protocol;
@@ -3552,7 +3658,7 @@ var require_websocket_server = __commonJS({
         if (extensions[PerMessageDeflate.extensionName]) {
           const params = extensions[PerMessageDeflate.extensionName].params;
           const value = extension.format({
-            [PerMessageDeflate.extensionName]: [params]
+            [PerMessageDeflate.extensionName]: [params],
           });
           headers.push(`Sec-WebSocket-Extensions: ${value}`);
           ws._extensions = extensions;
@@ -3563,7 +3669,7 @@ var require_websocket_server = __commonJS({
         ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
           maxPayload: this.options.maxPayload,
-          skipUTF8Validation: this.options.skipUTF8Validation
+          skipUTF8Validation: this.options.skipUTF8Validation,
         });
         if (this.clients) {
           this.clients.add(ws);
@@ -3599,15 +3705,27 @@ var require_websocket_server = __commonJS({
         Connection: "close",
         "Content-Type": "text/html",
         "Content-Length": Buffer.byteLength(message),
-        ...headers
+        ...headers,
       };
       socket.once("finish", socket.destroy);
       socket.end(
         `HTTP/1.1 ${code} ${http2.STATUS_CODES[code]}\r
-` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
+` +
+          Object.keys(headers)
+            .map((h) => `${h}: ${headers[h]}`)
+            .join("\r\n") +
+          "\r\n\r\n" +
+          message,
       );
     }
-    function abortHandshakeOrEmitwsClientError(server2, req, socket, code, message, headers) {
+    function abortHandshakeOrEmitwsClientError(
+      server2,
+      req,
+      socket,
+      code,
+      message,
+      headers,
+    ) {
       if (server2.listenerCount("wsClientError")) {
         const err = new Error(message);
         Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
@@ -3616,7 +3734,7 @@ var require_websocket_server = __commonJS({
         abortHandshake(socket, code, message, headers);
       }
     }
-  }
+  },
 });
 
 // host/node_selector/node_modules/ws/index.js
@@ -3641,7 +3759,7 @@ var require_ws = __commonJS({
     WebSocket2.WebSocket = WebSocket2;
     WebSocket2.WebSocketServer = WebSocketServer2;
     module2.exports = WebSocket2;
-  }
+  },
 });
 
 // host/node_selector/broker.js
@@ -3657,41 +3775,28 @@ var TransportCipher = class {
       keyBuffer = Buffer.from("twoman-default-key");
     }
     this.key = crypto.createHash("sha256").update(keyBuffer).digest();
-    this.iv = ivBuffer.length < 16 ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)]) : ivBuffer.subarray(0, 16);
-    this.blockIndex = 0n;
-    this.keystreamBuffer = Buffer.alloc(0);
-    this.streamOffset = 0;
-  }
-  _generateBlock() {
-    const indexBuf = Buffer.alloc(8);
-    indexBuf.writeBigUInt64BE(this.blockIndex, 0);
-    this.blockIndex += 1n;
-    const counterBytes = Buffer.concat([this.iv, indexBuf]);
-    return crypto.createHmac("sha256", this.key).update(counterBytes).digest();
+
+    this.iv =
+      ivBuffer.length < 16
+        ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)])
+        : ivBuffer.subarray(0, 16);
+
+    this._cipher = crypto.createCipheriv("aes-256-ctr", this.key, this.iv);
   }
   process(data) {
     if (!data || data.length === 0) return Buffer.alloc(0);
-    const output = Buffer.alloc(data.length);
-    let processed = 0;
-    while (processed < data.length) {
-      if (this.keystreamBuffer.length === 0) {
-        this.keystreamBuffer = this._generateBlock();
-      }
-      const chunkSize = Math.min(data.length - processed, this.keystreamBuffer.length);
-      for (let i = 0; i < chunkSize; i++) {
-        output[processed + i] = data[processed + i] ^ this.keystreamBuffer[i];
-      }
-      this.keystreamBuffer = this.keystreamBuffer.subarray(chunkSize);
-      processed += chunkSize;
-    }
-    this.streamOffset += data.length;
-    return output;
+    return this._cipher.update(data);
   }
 };
 var ROOT_DIR = path.resolve(__dirname, "..", "..");
-var CONFIG_PATH = process.env.TWOMAN_CONFIG_PATH || path.join(__dirname, "config.json");
-var TRACE_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(process.env.TWOMAN_TRACE || "");
-var DEBUG_STATS_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(process.env.TWOMAN_DEBUG_STATS || "");
+var CONFIG_PATH =
+  process.env.TWOMAN_CONFIG_PATH || path.join(__dirname, "config.json");
+var TRACE_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(
+  process.env.TWOMAN_TRACE || "",
+);
+var DEBUG_STATS_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(
+  process.env.TWOMAN_DEBUG_STATS || "",
+);
 var HEARTBEAT_INTERVAL_MS = 2e4;
 var DEFAULT_RUNTIME_LOG_MAX_BYTES = 5 * 1024 * 1024;
 var DEFAULT_RUNTIME_LOG_BACKUP_COUNT = 3;
@@ -3722,7 +3827,11 @@ var FLAG_DATA_BULK = 1;
 var LANE_CTL = "ctl";
 var LANE_DATA = "data";
 var DEFAULT_DATA_REPLAY_RESEND_MS = 750;
-var DNS_FRAME_TYPES = /* @__PURE__ */ new Set([FRAME_DNS_QUERY, FRAME_DNS_RESPONSE, FRAME_DNS_FAIL]);
+var DNS_FRAME_TYPES = /* @__PURE__ */ new Set([
+  FRAME_DNS_QUERY,
+  FRAME_DNS_RESPONSE,
+  FRAME_DNS_FAIL,
+]);
 var PROFILE_MANAGED_HOST_HTTP = "managed_host_http";
 var PROFILE_MANAGED_HOST_WS = "managed_host_ws";
 var CAPABILITY_VERSION = 1;
@@ -3734,10 +3843,19 @@ function coerceInt(value, fallbackValue, minimum = 1) {
   return Math.max(minimum, parsed);
 }
 function brokerCapabilities() {
-  const agentDownWaitMs = state ? state.downWaitMsForRole("agent") : { ctl: 1e3, data: 1e3 };
-  const agentDownReadTimeoutSeconds = Math.max(15, Math.max(agentDownWaitMs.ctl, agentDownWaitMs.data) / 1e3 + 10);
-  const helperDownCombinedDataLane = state ? state.helperDownCombinedDataLane : false;
-  const agentDownCombinedDataLane = state ? state.agentDownCombinedDataLane : false;
+  const agentDownWaitMs = state
+    ? state.downWaitMsForRole("agent")
+    : { ctl: 1e3, data: 1e3 };
+  const agentDownReadTimeoutSeconds = Math.max(
+    15,
+    Math.max(agentDownWaitMs.ctl, agentDownWaitMs.data) / 1e3 + 10,
+  );
+  const helperDownCombinedDataLane = state
+    ? state.helperDownCombinedDataLane
+    : false;
+  const agentDownCombinedDataLane = state
+    ? state.agentDownCombinedDataLane
+    : false;
   const websocketPublicEnabled = state ? state.websocketPublicEnabled : false;
   const supportedProfiles = [PROFILE_MANAGED_HOST_HTTP];
   if (websocketPublicEnabled) {
@@ -3756,10 +3874,10 @@ function brokerCapabilities() {
           down_lanes: helperDownCombinedDataLane ? ["data"] : [],
           down_parallelism: { data: 2 },
           upload_profiles: {
-            data: { max_batch_bytes: 65536, flush_delay_seconds: 4e-3 }
+            data: { max_batch_bytes: 65536, flush_delay_seconds: 4e-3 },
           },
           idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
-          streaming_up_lanes: []
+          streaming_up_lanes: [],
         },
         agent: {
           http2_enabled: { ctl: false, data: false },
@@ -3767,29 +3885,29 @@ function brokerCapabilities() {
           proxy_keepalive_connections: 2,
           proxy_keepalive_expiry_seconds: 15,
           upload_profiles: {
-            data: { max_batch_bytes: 131072, flush_delay_seconds: 6e-3 }
+            data: { max_batch_bytes: 131072, flush_delay_seconds: 6e-3 },
           },
           down_read_timeout_seconds: agentDownReadTimeoutSeconds,
           idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
           streaming_up_lanes: [],
-          ...agentDownCombinedDataLane ? { stream_control_lane: "pri" } : {}
-        }
+          ...(agentDownCombinedDataLane ? { stream_control_lane: "pri" } : {}),
+        },
       },
       [PROFILE_MANAGED_HOST_WS]: {
         transport: "ws",
         helper: {
-          streaming_up_lanes: []
+          streaming_up_lanes: [],
         },
         agent: {
-          streaming_up_lanes: []
-        }
-      }
+          streaming_up_lanes: [],
+        },
+      },
     },
     camouflage: {
       binary_media_type: BINARY_MEDIA_TYPE,
       route_template: loadedConfig.route_template || "/{lane}/{direction}",
-      health_template: loadedConfig.health_template || "/health"
-    }
+      health_template: loadedConfig.health_template || "/health",
+    },
   };
 }
 function defaultLogDir() {
@@ -3802,7 +3920,9 @@ function resolveLogPath(configValue, envValue, defaultFilename) {
   }
   const configured = String(configValue || "").trim();
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.resolve(path.dirname(path.resolve(CONFIG_PATH)), configured);
+    return path.isAbsolute(configured)
+      ? configured
+      : path.resolve(path.dirname(path.resolve(CONFIG_PATH)), configured);
   }
   const sharedLogDir = String(process.env.TWOMAN_LOG_DIR || "").trim();
   const baseDir = sharedLogDir ? path.resolve(sharedLogDir) : defaultLogDir();
@@ -3837,31 +3957,36 @@ function appendRotatedLine(filePath, maxBytes, backupCount, line) {
   try {
     ensureLogDir(filePath);
     const incomingBytes = Buffer.byteLength(line, "utf8");
-    const currentSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    const currentSize = fs.existsSync(filePath)
+      ? fs.statSync(filePath).size
+      : 0;
     if (maxBytes > 0 && currentSize + incomingBytes > maxBytes) {
       rotateFile(filePath, backupCount);
     }
     fs.appendFileSync(filePath, line, "utf8");
-  } catch (_error) {
-  }
+  } catch (_error) {}
 }
 function normalizeLaneProfiles(config) {
   const defaults = {
     ctl: { maxBytes: 4096, maxFrames: 8, holdMs: 1, padMin: 1024 },
     pri: { maxBytes: 32768, maxFrames: 16, holdMs: 2, padMin: 1024 },
-    bulk: { maxBytes: 262144, maxFrames: 64, holdMs: 4, padMin: 0 }
+    bulk: { maxBytes: 262144, maxFrames: 64, holdMs: 4, padMin: 0 },
   };
-  const configured = config && typeof config.lane_profiles === "object" && config.lane_profiles || {};
+  const configured =
+    (config &&
+      typeof config.lane_profiles === "object" &&
+      config.lane_profiles) ||
+    {};
   const normalized = {
     ctl: { ...defaults.ctl },
     pri: { ...defaults.pri },
-    bulk: { ...defaults.bulk }
+    bulk: { ...defaults.bulk },
   };
   const aliasFor = {
     maxBytes: "max_bytes",
     maxFrames: "max_frames",
     holdMs: "hold_ms",
-    padMin: "pad_min"
+    padMin: "pad_min",
   };
   for (const lane of Object.keys(normalized)) {
     const override = configured[lane];
@@ -3887,8 +4012,13 @@ function runtimeLog(message) {
   if (!RUNTIME_LOG_PATH) {
     return;
   }
-  appendRotatedLine(RUNTIME_LOG_PATH, RUNTIME_LOG_MAX_BYTES, RUNTIME_LOG_BACKUP_COUNT, `${(/* @__PURE__ */ new Date()).toISOString()} ${message}
-`);
+  appendRotatedLine(
+    RUNTIME_LOG_PATH,
+    RUNTIME_LOG_MAX_BYTES,
+    RUNTIME_LOG_BACKUP_COUNT,
+    `${/* @__PURE__ */ new Date().toISOString()} ${message}
+`,
+  );
 }
 function jsonSafe(value) {
   if (value === null || value === void 0) {
@@ -3930,12 +4060,27 @@ function makeErrorPayload(message) {
 function paddedPayload(payload, minimumSize) {
   let body = payload || Buffer.alloc(0);
   while (body.length < minimumSize) {
-    body = Buffer.concat([body, encodeFrame({ typeId: FRAME_PING, flags: 0, streamId: 0, offset: nowMs(), payload: Buffer.alloc(0) })]);
+    body = Buffer.concat([
+      body,
+      encodeFrame({
+        typeId: FRAME_PING,
+        flags: 0,
+        streamId: 0,
+        offset: nowMs(),
+        payload: Buffer.alloc(0),
+      }),
+    ]);
   }
   return body;
 }
 function pingFramePayload() {
-  return encodeFrame({ typeId: FRAME_PING, flags: 0, streamId: 0, offset: nowMs(), payload: Buffer.alloc(0) });
+  return encodeFrame({
+    typeId: FRAME_PING,
+    flags: 0,
+    streamId: 0,
+    offset: nowMs(),
+    payload: Buffer.alloc(0),
+  });
 }
 function encodeFrame(frame) {
   const payload = frame.payload || Buffer.alloc(0);
@@ -4013,7 +4158,11 @@ var PeerState = class {
     this.lastSeenMs = nowMs();
   }
   bufferedBytesTotal() {
-    return this.ctlQueue.bufferedBytes + this.dataPriQueue.bufferedBytes + this.dataBulkQueue.bufferedBytes;
+    return (
+      this.ctlQueue.bufferedBytes +
+      this.dataPriQueue.bufferedBytes +
+      this.dataBulkQueue.bufferedBytes
+    );
   }
   notifyWaiters(lane) {
     const waiters = this.waiters[lane];
@@ -4044,7 +4193,13 @@ var PeerState = class {
   }
 };
 var StreamState = class {
-  constructor(helperSessionId, helperPeerLabel, helperStreamId, agentSessionId, agentStreamId) {
+  constructor(
+    helperSessionId,
+    helperPeerLabel,
+    helperStreamId,
+    agentSessionId,
+    agentStreamId,
+  ) {
     this.helperSessionId = helperSessionId;
     this.helperPeerLabel = helperPeerLabel;
     this.helperStreamId = Number(helperStreamId);
@@ -4064,7 +4219,13 @@ var StreamState = class {
   }
 };
 var DnsQueryState = class {
-  constructor(helperSessionId, helperPeerLabel, helperRequestId, agentSessionId, agentRequestId) {
+  constructor(
+    helperSessionId,
+    helperPeerLabel,
+    helperRequestId,
+    agentSessionId,
+    agentRequestId,
+  ) {
     this.helperSessionId = helperSessionId;
     this.helperPeerLabel = helperPeerLabel;
     this.helperRequestId = Number(helperRequestId);
@@ -4080,7 +4241,9 @@ var DnsQueryState = class {
 var BrokerState = class {
   constructor(config) {
     this.config = config;
-    this.baseUri = String(config.base_uri || process.env.TWOMAN_BASE_URI || "").replace(/\/+$/, "");
+    this.baseUri = String(
+      config.base_uri || process.env.TWOMAN_BASE_URI || "",
+    ).replace(/\/+$/, "");
     this.clientTokens = new Set(config.client_tokens || []);
     this.agentTokens = new Set(config.agent_tokens || []);
     this.peerTtlMs = Number(config.peer_ttl_seconds || 90) * 1e3;
@@ -4088,17 +4251,36 @@ var BrokerState = class {
     this.dnsQueryTtlMs = Number(config.dns_query_ttl_seconds || 30) * 1e3;
     this.maxLaneBytes = Number(config.max_lane_bytes || 16 * 1024 * 1024);
     this.maxPeerBufferedBytes = Number(
-      config.max_peer_buffered_bytes || Math.min(this.maxLaneBytes * 2, 32 * 1024 * 1024)
+      config.max_peer_buffered_bytes ||
+        Math.min(this.maxLaneBytes * 2, 32 * 1024 * 1024),
     );
-    this.maxStreamsPerPeerSession = Math.max(1, Number(config.max_streams_per_peer_session || 256));
-    this.maxOpenRatePerPeerSession = Math.max(1, Number(config.max_open_rate_per_peer_session || 120));
-    this.openRateWindowMs = Math.max(1e3, Number(config.open_rate_window_seconds || 10) * 1e3);
-    this.flushBackpressureBytes = Number(config.flush_backpressure_bytes || 512 * 1024);
+    this.maxStreamsPerPeerSession = Math.max(
+      1,
+      Number(config.max_streams_per_peer_session || 256),
+    );
+    this.maxOpenRatePerPeerSession = Math.max(
+      1,
+      Number(config.max_open_rate_per_peer_session || 120),
+    );
+    this.openRateWindowMs = Math.max(
+      1e3,
+      Number(config.open_rate_window_seconds || 10) * 1e3,
+    );
+    this.flushBackpressureBytes = Number(
+      config.flush_backpressure_bytes || 512 * 1024,
+    );
     this.flushRetryDelayMs = Number(config.flush_retry_delay_ms || 5);
-    this.dataReplayResendMs = Math.max(50, Number(config.data_replay_resend_ms || DEFAULT_DATA_REPLAY_RESEND_MS));
+    this.dataReplayResendMs = Math.max(
+      50,
+      Number(config.data_replay_resend_ms || DEFAULT_DATA_REPLAY_RESEND_MS),
+    );
     this.downWaitMsByRole = this.normalizeRoleDownWaitMs(config);
-    this.helperDownCombinedDataLane = Boolean(config.helper_down_combined_data_lane);
-    this.agentDownCombinedDataLane = Boolean(config.agent_down_combined_data_lane);
+    this.helperDownCombinedDataLane = Boolean(
+      config.helper_down_combined_data_lane,
+    );
+    this.agentDownCombinedDataLane = Boolean(
+      config.agent_down_combined_data_lane,
+    );
     this.websocketPublicEnabled = Boolean(config.websocket_public_enabled);
     this.streamingCtlDownHelper = Boolean(config.streaming_ctl_down_helper);
     this.streamingDataDownHelper = Boolean(config.streaming_data_down_helper);
@@ -4123,7 +4305,7 @@ var BrokerState = class {
       ws_bytes_out: { ctl: 0, data: 0 },
       frames_in: { ctl: 0, pri: 0, bulk: 0 },
       frames_out: { ctl: 0, pri: 0, bulk: 0 },
-      connect_probe: { ok: 0, fail: 0 }
+      connect_probe: { ok: 0, fail: 0 },
     };
     this.recentEvents = [];
   }
@@ -4136,9 +4318,13 @@ var BrokerState = class {
     const base = this.normalizeDownWaitMs(config.down_wait_ms || {});
     const values = {
       helper: { ...base },
-      agent: { ...base }
+      agent: { ...base },
     };
-    const byRole = config && typeof config.down_wait_ms_by_role === "object" && config.down_wait_ms_by_role || {};
+    const byRole =
+      (config &&
+        typeof config.down_wait_ms_by_role === "object" &&
+        config.down_wait_ms_by_role) ||
+      {};
     for (const role of ["helper", "agent"]) {
       const override = byRole[role];
       if (!override || typeof override !== "object") {
@@ -4159,15 +4345,19 @@ var BrokerState = class {
       return frameTypeId === FRAME_DATA ? inboundLane : "pri";
     }
     if (targetRole === "helper" && this.helperDownCombinedDataLane) {
-      return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId) ? inboundLane : "pri";
+      return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)
+        ? inboundLane
+        : "pri";
     }
-    return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId) ? inboundLane : null;
+    return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)
+      ? inboundLane
+      : null;
   }
   recordEvent(kind, details, options = {}) {
     const event = {
-      ts: (/* @__PURE__ */ new Date()).toISOString(),
+      ts: /* @__PURE__ */ new Date().toISOString(),
       kind,
-      ...jsonSafe(details)
+      ...jsonSafe(details),
     };
     if (options.durable !== false && EVENT_LOG_PATH) {
       appendRotatedLine(
@@ -4175,12 +4365,15 @@ var BrokerState = class {
         EVENT_LOG_MAX_BYTES,
         EVENT_LOG_BACKUP_COUNT,
         `${JSON.stringify(event)}
-`
+`,
       );
     }
     this.recentEvents.push(event);
     if (this.recentEvents.length > RECENT_EVENT_LIMIT) {
-      this.recentEvents.splice(0, this.recentEvents.length - RECENT_EVENT_LIMIT);
+      this.recentEvents.splice(
+        0,
+        this.recentEvents.length - RECENT_EVENT_LIMIT,
+      );
     }
   }
   peerKey(role, peerSessionId) {
@@ -4202,7 +4395,11 @@ var BrokerState = class {
     return false;
   }
   normalizePath(rawPath) {
-    if (rawPath === "/health" || rawPath === "/pid" || rawPath === "/connect-probe") {
+    if (
+      rawPath === "/health" ||
+      rawPath === "/pid" ||
+      rawPath === "/connect-probe"
+    ) {
       return rawPath;
     }
     if (this.baseUri && rawPath.startsWith(this.baseUri)) {
@@ -4218,11 +4415,13 @@ var BrokerState = class {
       peer = new PeerState(role, peerLabel, peerSessionId);
       this.peers.set(key, peer);
       this.metrics.peer_connects += 1;
-      trace(`peer online role=${role} label=${peerLabel} session=${peerSessionId}`);
+      trace(
+        `peer online role=${role} label=${peerLabel} session=${peerSessionId}`,
+      );
       this.recordEvent("peer_online", {
         role,
         peer_label: peerLabel,
-        peer_session_id: peerSessionId
+        peer_session_id: peerSessionId,
       });
     }
     peer.touch();
@@ -4269,46 +4468,61 @@ var BrokerState = class {
         role: peer.role,
         peer_label: peer.peerLabel,
         peer_session_id: peer.peerSessionId,
-        lane
+        lane,
       });
     }
   }
   queueFrame(role, peerSessionId, frame, queueLane = null) {
     const peer = this.peers.get(this.peerKey(role, peerSessionId));
     if (!peer) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=no-peer`);
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=no-peer`,
+      );
       this.recordEvent("queue_drop", {
         reason: "no-peer",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
     const encoded = encodeFrame(frame);
-    if (this.maxPeerBufferedBytes && peer.bufferedBytesTotal() >= this.maxPeerBufferedBytes) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=peer-buffer-full`);
+    if (
+      this.maxPeerBufferedBytes &&
+      peer.bufferedBytesTotal() >= this.maxPeerBufferedBytes
+    ) {
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=peer-buffer-full`,
+      );
       this.recordEvent("queue_drop", {
         reason: "peer-buffer-full",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
-    if (frame.typeId === FRAME_DATA || queueLane === "pri" || queueLane === "bulk") {
-      const dataLane = queueLane || (frame.flags & FLAG_DATA_BULK ? "bulk" : "pri");
-      const targetQueue = dataLane === "bulk" ? peer.dataBulkQueue : peer.dataPriQueue;
+    if (
+      frame.typeId === FRAME_DATA ||
+      queueLane === "pri" ||
+      queueLane === "bulk"
+    ) {
+      const dataLane =
+        queueLane || (frame.flags & FLAG_DATA_BULK ? "bulk" : "pri");
+      const targetQueue =
+        dataLane === "bulk" ? peer.dataBulkQueue : peer.dataPriQueue;
       if (targetQueue.bufferedBytes >= this.maxLaneBytes) {
-        trace(`drop data stream=${frame.streamId} role=${role} session=${peerSessionId} reason=data-queue-full`);
+        trace(
+          `drop data stream=${frame.streamId} role=${role} session=${peerSessionId} reason=data-queue-full`,
+        );
         this.recordEvent("queue_drop", {
           reason: "data-queue-full",
           role,
           peer_session_id: peerSessionId,
           type_id: frame.typeId,
-          stream_id: frame.streamId
+          stream_id: frame.streamId,
         });
         return false;
       }
@@ -4319,19 +4533,23 @@ var BrokerState = class {
           streamId: frame.streamId,
           endOffset: Number(frame.offset || 0) + encoded.readUInt32BE(16),
           sentAtMs: 0,
-          replayLane: dataLane
+          replayLane: dataLane,
         };
         peer.dataReplay[dataLane].push(entry);
         peer.dataReplayByPayload.set(encoded, entry);
       } else {
-        this.recordEvent("queue_ctl", {
-          role,
-          peer_session_id: peerSessionId,
-          lane: dataLane,
-          type_id: frame.typeId,
-          stream_id: frame.streamId,
-          payload_bytes: frame.payload ? frame.payload.length : 0
-        }, { durable: false });
+        this.recordEvent(
+          "queue_ctl",
+          {
+            role,
+            peer_session_id: peerSessionId,
+            lane: dataLane,
+            type_id: frame.typeId,
+            stream_id: frame.streamId,
+            payload_bytes: frame.payload ? frame.payload.length : 0,
+          },
+          { durable: false },
+        );
       }
       this.metrics.frames_out[dataLane] += 1;
       peer.notifyWaiters(LANE_DATA);
@@ -4339,25 +4557,31 @@ var BrokerState = class {
       return true;
     }
     if (peer.ctlQueue.bufferedBytes >= this.maxLaneBytes) {
-      trace(`drop ctl type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=ctl-queue-full`);
+      trace(
+        `drop ctl type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=ctl-queue-full`,
+      );
       this.recordEvent("queue_drop", {
         reason: "ctl-queue-full",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
     peer.ctlQueue.push(encoded);
     if (frame.typeId !== FRAME_PING) {
-      this.recordEvent("queue_ctl", {
-        role,
-        peer_session_id: peerSessionId,
-        type_id: frame.typeId,
-        stream_id: frame.streamId,
-        payload_bytes: frame.payload ? frame.payload.length : 0
-      }, { durable: false });
+      this.recordEvent(
+        "queue_ctl",
+        {
+          role,
+          peer_session_id: peerSessionId,
+          type_id: frame.typeId,
+          stream_id: frame.streamId,
+          payload_bytes: frame.payload ? frame.payload.length : 0,
+        },
+        { durable: false },
+      );
     }
     this.metrics.frames_out.ctl += 1;
     peer.notifyWaiters(LANE_CTL);
@@ -4383,20 +4607,28 @@ var BrokerState = class {
     const firstTypeId = first.readUInt8(0);
     const firstStreamId = first.readUInt32BE(4);
     if (firstTypeId !== FRAME_PING) {
-      this.recordEvent("dequeue_ctl", {
-        role: peer.role,
-        peer_session_id: peer.peerSessionId,
-        type_id: firstTypeId,
-        stream_id: firstStreamId,
-        bytes: first.length
-      }, { durable: false });
+      this.recordEvent(
+        "dequeue_ctl",
+        {
+          role: peer.role,
+          peer_session_id: peer.peerSessionId,
+          type_id: firstTypeId,
+          stream_id: firstStreamId,
+          bytes: first.length,
+        },
+        { durable: false },
+      );
     }
     const profile = this.laneProfile(LANE_CTL);
     const payloads = [first];
     let total = first.length;
     let frames = 1;
     const deadline = Date.now() + profile.holdMs;
-    while (total < profile.maxBytes && frames < profile.maxFrames && Date.now() < deadline) {
+    while (
+      total < profile.maxBytes &&
+      frames < profile.maxFrames &&
+      Date.now() < deadline
+    ) {
       const next = peer.ctlQueue.shift();
       if (!next) {
         break;
@@ -4427,8 +4659,12 @@ var BrokerState = class {
         sourceLane = "bulk";
       }
       if (!first) {
-        first = this.nextReplayPayload(peer, "pri") || this.nextReplayPayload(peer, "bulk");
-        sourceLane = first ? peer.dataReplayByPayload.get(first)?.replayLane || "bulk" : sourceLane;
+        first =
+          this.nextReplayPayload(peer, "pri") ||
+          this.nextReplayPayload(peer, "bulk");
+        sourceLane = first
+          ? peer.dataReplayByPayload.get(first)?.replayLane || "bulk"
+          : sourceLane;
         if (!first) {
           return pingFramePayload();
         }
@@ -4442,7 +4678,11 @@ var BrokerState = class {
     let total = first.length;
     let frames = 1;
     const deadline = Date.now() + profile.holdMs;
-    while (total < profile.maxBytes && frames < profile.maxFrames && Date.now() < deadline) {
+    while (
+      total < profile.maxBytes &&
+      frames < profile.maxFrames &&
+      Date.now() < deadline
+    ) {
       let next = queue.shift();
       if (!next) {
         next = this.nextReplayPayload(peer, sourceLane);
@@ -4455,7 +4695,9 @@ var BrokerState = class {
       total += next.length;
       frames += 1;
     }
-    return profile.padMin > 0 ? paddedPayload(Buffer.concat(payloads), profile.padMin) : Buffer.concat(payloads);
+    return profile.padMin > 0
+      ? paddedPayload(Buffer.concat(payloads), profile.padMin)
+      : Buffer.concat(payloads);
   }
   noteDataSent(peer, payload) {
     const entry = peer.dataReplayByPayload.get(payload);
@@ -4492,8 +4734,18 @@ var BrokerState = class {
     }
   }
   clearStreamReplay(stream) {
-    this.pruneAckedData("helper", stream.helperSessionId, stream.helperStreamId, Number.MAX_SAFE_INTEGER);
-    this.pruneAckedData("agent", stream.agentSessionId, stream.agentStreamId, Number.MAX_SAFE_INTEGER);
+    this.pruneAckedData(
+      "helper",
+      stream.helperSessionId,
+      stream.helperStreamId,
+      Number.MAX_SAFE_INTEGER,
+    );
+    this.pruneAckedData(
+      "agent",
+      stream.agentSessionId,
+      stream.agentStreamId,
+      Number.MAX_SAFE_INTEGER,
+    );
   }
   scheduleFlush(peer, lane) {
     if (peer.flushScheduled[lane]) {
@@ -4542,14 +4794,18 @@ var BrokerState = class {
             peer.dataBulkQueue.bufferedBytes += payload.length;
           }
           peer.flushScheduled[lane] = false;
-          trace(`flush error lane=${lane} peer=${peer.peerSessionId} error=${error}`);
-          runtimeLog(`flush error lane=${lane} role=${peer.role} label=${peer.peerLabel} peer=${peer.peerSessionId} error=${error}`);
+          trace(
+            `flush error lane=${lane} peer=${peer.peerSessionId} error=${error}`,
+          );
+          runtimeLog(
+            `flush error lane=${lane} role=${peer.role} label=${peer.peerLabel} peer=${peer.peerSessionId} error=${error}`,
+          );
           this.recordEvent("flush_error", {
             lane,
             peer_role: peer.role,
             peer_label: peer.peerLabel,
             peer_session_id: peer.peerSessionId,
-            error: String(error && error.message ? error.message : error)
+            error: String(error && error.message ? error.message : error),
           });
           return;
         }
@@ -4563,14 +4819,18 @@ var BrokerState = class {
       return;
     }
     if (frame.typeId !== FRAME_DATA) {
-      this.recordEvent("frame_in", {
-        sender_role: senderRole,
-        sender_peer_session_id: senderPeerSessionId,
-        lane,
-        type_id: frame.typeId,
-        stream_id: frame.streamId,
-        payload_bytes: frame.payload ? frame.payload.length : 0
-      }, { durable: false });
+      this.recordEvent(
+        "frame_in",
+        {
+          sender_role: senderRole,
+          sender_peer_session_id: senderPeerSessionId,
+          lane,
+          type_id: frame.typeId,
+          stream_id: frame.streamId,
+          payload_bytes: frame.payload ? frame.payload.length : 0,
+        },
+        { durable: false },
+      );
     }
     if (frame.typeId === FRAME_OPEN && senderRole === "helper") {
       this.handleOpen(senderPeerSessionId, frame);
@@ -4580,23 +4840,43 @@ var BrokerState = class {
       this.handleDnsQuery(senderPeerSessionId, lane, frame);
       return;
     }
-    if (frame.typeId === FRAME_DNS_RESPONSE || frame.typeId === FRAME_DNS_FAIL) {
+    if (
+      frame.typeId === FRAME_DNS_RESPONSE ||
+      frame.typeId === FRAME_DNS_FAIL
+    ) {
       this.handleDnsResult(senderRole, senderPeerSessionId, lane, frame);
       return;
     }
-    const stream = senderRole === "helper" ? this.streamsByHelper.get(this.streamHelperKey(senderPeerSessionId, frame.streamId)) : this.streamsByAgent.get(frame.streamId);
+    const stream =
+      senderRole === "helper"
+        ? this.streamsByHelper.get(
+            this.streamHelperKey(senderPeerSessionId, frame.streamId),
+          )
+        : this.streamsByAgent.get(frame.streamId);
     if (!stream) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} from=${senderRole}/${senderPeerSessionId} lane=${lane} reason=unknown-stream`);
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} from=${senderRole}/${senderPeerSessionId} lane=${lane} reason=unknown-stream`,
+      );
       return;
     }
     stream.touch();
     if (frame.typeId === FRAME_WINDOW) {
       if (senderRole === "helper") {
         stream.helperAckOffset += Number(frame.offset || 0);
-        this.pruneAckedData("helper", stream.helperSessionId, stream.helperStreamId, stream.helperAckOffset);
+        this.pruneAckedData(
+          "helper",
+          stream.helperSessionId,
+          stream.helperStreamId,
+          stream.helperAckOffset,
+        );
       } else {
         stream.agentAckOffset += Number(frame.offset || 0);
-        this.pruneAckedData("agent", stream.agentSessionId, stream.agentStreamId, stream.agentAckOffset);
+        this.pruneAckedData(
+          "agent",
+          stream.agentSessionId,
+          stream.agentStreamId,
+          stream.agentAckOffset,
+        );
       }
     }
     if (frame.typeId === FRAME_FIN) {
@@ -4625,35 +4905,52 @@ var BrokerState = class {
       flags: frame.flags,
       streamId: outboundStreamId,
       offset: frame.offset,
-      payload: frame.payload
+      payload: frame.payload,
     };
     const targetLane = this.targetLaneForRole(targetRole, lane, frame.typeId);
-    const queued = this.queueFrame(targetRole, targetPeerSessionId, outboundFrame, targetLane);
+    const queued = this.queueFrame(
+      targetRole,
+      targetPeerSessionId,
+      outboundFrame,
+      targetLane,
+    );
     if (queued) {
-      this.recordEvent("frame_forward", {
-        sender_role: senderRole,
-        sender_peer_session_id: senderPeerSessionId,
-        target_role: targetRole,
-        target_peer_session_id: targetPeerSessionId,
-        type_id: frame.typeId,
-        source_stream_id: frame.streamId,
-        target_stream_id: outboundStreamId
-      }, { durable: false });
+      this.recordEvent(
+        "frame_forward",
+        {
+          sender_role: senderRole,
+          sender_peer_session_id: senderPeerSessionId,
+          target_role: targetRole,
+          target_peer_session_id: targetPeerSessionId,
+          type_id: frame.typeId,
+          source_stream_id: frame.streamId,
+          target_stream_id: outboundStreamId,
+        },
+        { durable: false },
+      );
     }
     if (!queued && senderRole === "helper") {
-      this.queueFrame("helper", senderPeerSessionId, {
-        typeId: FRAME_RST,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload("broker queue full")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        senderPeerSessionId,
+        {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("broker queue full"),
+        },
+        this.helperControlLane(),
+      );
     }
     if (frame.typeId === FRAME_RST) {
       this.dropStream(stream);
       return;
     }
-    if ((frame.typeId === FRAME_FIN || frame.typeId === FRAME_WINDOW) && this.streamDeliveryComplete(stream)) {
+    if (
+      (frame.typeId === FRAME_FIN || frame.typeId === FRAME_WINDOW) &&
+      this.streamDeliveryComplete(stream)
+    ) {
       this.dropStream(stream);
     }
   }
@@ -4665,7 +4962,10 @@ var BrokerState = class {
     if (!helperPeer) {
       openError = "helper session unavailable";
     }
-    if (agentSessionId && !this.peers.has(this.peerKey("agent", agentSessionId))) {
+    if (
+      agentSessionId &&
+      !this.peers.has(this.peerKey("agent", agentSessionId))
+    ) {
       agentSessionId = "";
     }
     let agentRequestId = 0;
@@ -4676,59 +4976,84 @@ var BrokerState = class {
         helperPeerLabel,
         frame.streamId,
         agentSessionId,
-        agentRequestId
+        agentRequestId,
       );
-      this.dnsQueriesByHelper.set(this.dnsHelperKey(helperSessionId, frame.streamId), query2);
+      this.dnsQueriesByHelper.set(
+        this.dnsHelperKey(helperSessionId, frame.streamId),
+        query2,
+      );
       this.dnsQueriesByAgent.set(agentRequestId, query2);
       this.recordEvent("dns_query_map", {
         helper_session_id: helperSessionId,
         helper_peer_label: helperPeerLabel,
         helper_request_id: frame.streamId,
         agent_session_id: agentSessionId,
-        agent_request_id: agentRequestId
+        agent_request_id: agentRequestId,
       });
     }
     if (openError) {
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_DNS_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload(openError)
-      }, "pri");
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload(openError),
+        },
+        "pri",
+      );
       return;
     }
     if (!agentSessionId) {
-      this.queueFrame("helper", helperSessionId, {
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("hidden agent unavailable"),
+        },
+        "pri",
+      );
+      return;
+    }
+    const queued = this.queueFrame(
+      "agent",
+      agentSessionId,
+      {
+        typeId: FRAME_DNS_QUERY,
+        flags: frame.flags,
+        streamId: agentRequestId,
+        offset: frame.offset,
+        payload: frame.payload,
+      },
+      lane === "bulk" ? "bulk" : "pri",
+    );
+    if (queued) {
+      return;
+    }
+    const query = this.dnsQueriesByHelper.get(
+      this.dnsHelperKey(helperSessionId, frame.streamId),
+    );
+    if (query) {
+      this.dropDnsQuery(query, "agent-queue-failed");
+    }
+    this.queueFrame(
+      "helper",
+      helperSessionId,
+      {
         typeId: FRAME_DNS_FAIL,
         flags: 0,
         streamId: frame.streamId,
         offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
-      }, "pri");
-      return;
-    }
-    const queued = this.queueFrame("agent", agentSessionId, {
-      typeId: FRAME_DNS_QUERY,
-      flags: frame.flags,
-      streamId: agentRequestId,
-      offset: frame.offset,
-      payload: frame.payload
-    }, lane === "bulk" ? "bulk" : "pri");
-    if (queued) {
-      return;
-    }
-    const query = this.dnsQueriesByHelper.get(this.dnsHelperKey(helperSessionId, frame.streamId));
-    if (query) {
-      this.dropDnsQuery(query, "agent-queue-failed");
-    }
-    this.queueFrame("helper", helperSessionId, {
-      typeId: FRAME_DNS_FAIL,
-      flags: 0,
-      streamId: frame.streamId,
-      offset: 0,
-      payload: makeErrorPayload("hidden agent unavailable")
-    }, "pri");
+        payload: makeErrorPayload("hidden agent unavailable"),
+      },
+      "pri",
+    );
   }
   handleDnsResult(senderRole, senderPeerSessionId, lane, frame) {
     if (senderRole !== "agent") {
@@ -4738,7 +5063,7 @@ var BrokerState = class {
         sender_peer_session_id: senderPeerSessionId,
         lane,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return;
     }
@@ -4750,18 +5075,23 @@ var BrokerState = class {
         sender_peer_session_id: senderPeerSessionId,
         lane,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return;
     }
     query.touch();
-    this.queueFrame("helper", query.helperSessionId, {
-      typeId: frame.typeId,
-      flags: frame.flags,
-      streamId: query.helperRequestId,
-      offset: frame.offset,
-      payload: frame.payload
-    }, lane === "bulk" ? "bulk" : "pri");
+    this.queueFrame(
+      "helper",
+      query.helperSessionId,
+      {
+        typeId: frame.typeId,
+        flags: frame.flags,
+        streamId: query.helperRequestId,
+        offset: frame.offset,
+        payload: frame.payload,
+      },
+      lane === "bulk" ? "bulk" : "pri",
+    );
     const liveQuery = this.dnsQueriesByAgent.get(frame.streamId);
     if (liveQuery) {
       this.dropDnsQuery(liveQuery, "completed");
@@ -4777,55 +5107,79 @@ var BrokerState = class {
     } else {
       openError = this.reserveHelperOpen(helperPeer);
     }
-    if (agentSessionId && !this.peers.has(this.peerKey("agent", agentSessionId))) {
+    if (
+      agentSessionId &&
+      !this.peers.has(this.peerKey("agent", agentSessionId))
+    ) {
       agentSessionId = "";
     }
     if (openError) {
       this.recordEvent("open_fail", {
         helper_session_id: helperSessionId,
         helper_stream_id: frame.streamId,
-        reason: openError
+        reason: openError,
       });
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_OPEN_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload(openError)
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_OPEN_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload(openError),
+        },
+        this.helperControlLane(),
+      );
       return;
     }
     if (!agentSessionId) {
       this.recordEvent("open_fail", {
         helper_session_id: helperSessionId,
         helper_stream_id: frame.streamId,
-        reason: "no-agent"
+        reason: "no-agent",
       });
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_OPEN_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_OPEN_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("hidden agent unavailable"),
+        },
+        this.helperControlLane(),
+      );
       return;
     }
     const agentStreamId = this.nextAgentStreamId++;
-    const stream = new StreamState(helperSessionId, helperPeerLabel, frame.streamId, agentSessionId, agentStreamId);
-    this.streamsByHelper.set(this.streamHelperKey(helperSessionId, frame.streamId), stream);
+    const stream = new StreamState(
+      helperSessionId,
+      helperPeerLabel,
+      frame.streamId,
+      agentSessionId,
+      agentStreamId,
+    );
+    this.streamsByHelper.set(
+      this.streamHelperKey(helperSessionId, frame.streamId),
+      stream,
+    );
     this.streamsByAgent.set(agentStreamId, stream);
     helperPeer.activeStreams += 1;
     const agentPeer = this.peers.get(this.peerKey("agent", agentSessionId));
     if (agentPeer) {
       agentPeer.activeStreams += 1;
     }
-    trace(`open helper=${helperPeerLabel}/${helperSessionId} helper_stream=${frame.streamId} agent_session=${agentSessionId} agent_stream=${agentStreamId}`);
+    trace(
+      `open helper=${helperPeerLabel}/${helperSessionId} helper_stream=${frame.streamId} agent_session=${agentSessionId} agent_stream=${agentStreamId}`,
+    );
     this.recordEvent("open_map", {
       helper_session_id: helperSessionId,
       helper_stream_id: frame.streamId,
       agent_session_id: agentSessionId,
       agent_stream_id: agentStreamId,
-      helper_peer_label: helperPeerLabel
+      helper_peer_label: helperPeerLabel,
     });
     this.queueFrame(
       "agent",
@@ -4835,15 +5189,17 @@ var BrokerState = class {
         flags: frame.flags,
         streamId: agentStreamId,
         offset: frame.offset,
-        payload: frame.payload
+        payload: frame.payload,
       },
-      this.agentDownCombinedDataLane ? "pri" : null
+      this.agentDownCombinedDataLane ? "pri" : null,
     );
   }
   reserveHelperOpen(peer) {
     const currentMs = nowMs();
     const windowStart = currentMs - this.openRateWindowMs;
-    peer.openEventsMs = peer.openEventsMs.filter((value) => value >= windowStart);
+    peer.openEventsMs = peer.openEventsMs.filter(
+      (value) => value >= windowStart,
+    );
     if (peer.activeStreams >= this.maxStreamsPerPeerSession) {
       return "too many concurrent streams";
     }
@@ -4855,7 +5211,9 @@ var BrokerState = class {
   }
   dropStream(stream) {
     this.clearStreamReplay(stream);
-    this.streamsByHelper.delete(this.streamHelperKey(stream.helperSessionId, stream.helperStreamId));
+    this.streamsByHelper.delete(
+      this.streamHelperKey(stream.helperSessionId, stream.helperStreamId),
+    );
     this.streamsByAgent.delete(stream.agentStreamId);
     this.recordEvent("drop_stream", {
       helper_session_id: stream.helperSessionId,
@@ -4867,19 +5225,25 @@ var BrokerState = class {
       helper_fin_offset: stream.helperFinOffset,
       agent_fin_offset: stream.agentFinOffset,
       helper_ack_offset: stream.helperAckOffset,
-      agent_ack_offset: stream.agentAckOffset
+      agent_ack_offset: stream.agentAckOffset,
     });
-    const helperPeer = this.peers.get(this.peerKey("helper", stream.helperSessionId));
+    const helperPeer = this.peers.get(
+      this.peerKey("helper", stream.helperSessionId),
+    );
     if (helperPeer && helperPeer.activeStreams > 0) {
       helperPeer.activeStreams -= 1;
     }
-    const agentPeer = this.peers.get(this.peerKey("agent", stream.agentSessionId));
+    const agentPeer = this.peers.get(
+      this.peerKey("agent", stream.agentSessionId),
+    );
     if (agentPeer && agentPeer.activeStreams > 0) {
       agentPeer.activeStreams -= 1;
     }
   }
   dropDnsQuery(query, reason = "") {
-    this.dnsQueriesByHelper.delete(this.dnsHelperKey(query.helperSessionId, query.helperRequestId));
+    this.dnsQueriesByHelper.delete(
+      this.dnsHelperKey(query.helperSessionId, query.helperRequestId),
+    );
     this.dnsQueriesByAgent.delete(query.agentRequestId);
     this.recordEvent("drop_dns_query", {
       helper_session_id: query.helperSessionId,
@@ -4887,15 +5251,19 @@ var BrokerState = class {
       helper_request_id: query.helperRequestId,
       agent_session_id: query.agentSessionId,
       agent_request_id: query.agentRequestId,
-      reason
+      reason,
     });
   }
   streamDeliveryComplete(stream) {
     if (!(stream.helperFinSeen && stream.agentFinSeen)) {
       return false;
     }
-    const helperDone = stream.agentFinOffset !== null && stream.helperAckOffset >= Number(stream.agentFinOffset);
-    const agentDone = stream.helperFinOffset !== null && stream.agentAckOffset >= Number(stream.helperFinOffset);
+    const helperDone =
+      stream.agentFinOffset !== null &&
+      stream.helperAckOffset >= Number(stream.agentFinOffset);
+    const agentDone =
+      stream.helperFinOffset !== null &&
+      stream.agentAckOffset >= Number(stream.helperFinOffset);
     return helperDone && agentDone;
   }
   cleanup() {
@@ -4908,7 +5276,10 @@ var BrokerState = class {
       }
       const staleStreams = [];
       for (const stream of this.streamsByAgent.values()) {
-        if (stream.helperSessionId === peer.peerSessionId || stream.agentSessionId === peer.peerSessionId) {
+        if (
+          stream.helperSessionId === peer.peerSessionId ||
+          stream.agentSessionId === peer.peerSessionId
+        ) {
           staleStreams.push(stream);
         }
       }
@@ -4920,7 +5291,7 @@ var BrokerState = class {
           helper_session_id: stream.helperSessionId,
           helper_stream_id: stream.helperStreamId,
           agent_session_id: stream.agentSessionId,
-          agent_stream_id: stream.agentStreamId
+          agent_stream_id: stream.agentStreamId,
         });
         if (peer.role === "helper" && stream.agentSessionId) {
           this.queueFrame("agent", stream.agentSessionId, {
@@ -4928,35 +5299,48 @@ var BrokerState = class {
             flags: 0,
             streamId: stream.agentStreamId,
             offset: 0,
-            payload: makeErrorPayload("peer expired")
+            payload: makeErrorPayload("peer expired"),
           });
         }
         if (peer.role === "agent" && stream.helperSessionId) {
-          this.queueFrame("helper", stream.helperSessionId, {
-            typeId: FRAME_RST,
-            flags: 0,
-            streamId: stream.helperStreamId,
-            offset: 0,
-            payload: makeErrorPayload("peer expired")
-          }, this.helperControlLane());
+          this.queueFrame(
+            "helper",
+            stream.helperSessionId,
+            {
+              typeId: FRAME_RST,
+              flags: 0,
+              streamId: stream.helperStreamId,
+              offset: 0,
+              payload: makeErrorPayload("peer expired"),
+            },
+            this.helperControlLane(),
+          );
         }
         this.dropStream(stream);
       }
       const staleDnsQueries = [];
       for (const query of this.dnsQueriesByAgent.values()) {
-        if (query.helperSessionId === peer.peerSessionId || query.agentSessionId === peer.peerSessionId) {
+        if (
+          query.helperSessionId === peer.peerSessionId ||
+          query.agentSessionId === peer.peerSessionId
+        ) {
           staleDnsQueries.push(query);
         }
       }
       for (const query of staleDnsQueries) {
         if (peer.role === "agent") {
-          this.queueFrame("helper", query.helperSessionId, {
-            typeId: FRAME_DNS_FAIL,
-            flags: 0,
-            streamId: query.helperRequestId,
-            offset: 0,
-            payload: makeErrorPayload("peer expired")
-          }, "pri");
+          this.queueFrame(
+            "helper",
+            query.helperSessionId,
+            {
+              typeId: FRAME_DNS_FAIL,
+              flags: 0,
+              streamId: query.helperRequestId,
+              offset: 0,
+              payload: makeErrorPayload("peer expired"),
+            },
+            "pri",
+          );
         }
         this.dropDnsQuery(query, "peer-expired");
       }
@@ -4974,21 +5358,26 @@ var BrokerState = class {
         helper_session_id: stream.helperSessionId,
         helper_stream_id: stream.helperStreamId,
         agent_session_id: stream.agentSessionId,
-        agent_stream_id: stream.agentStreamId
+        agent_stream_id: stream.agentStreamId,
       });
-      this.queueFrame("helper", stream.helperSessionId, {
-        typeId: FRAME_RST,
-        flags: 0,
-        streamId: stream.helperStreamId,
-        offset: 0,
-        payload: makeErrorPayload("stream expired")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        stream.helperSessionId,
+        {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: stream.helperStreamId,
+          offset: 0,
+          payload: makeErrorPayload("stream expired"),
+        },
+        this.helperControlLane(),
+      );
       this.queueFrame("agent", stream.agentSessionId, {
         typeId: FRAME_RST,
         flags: 0,
         streamId: stream.agentStreamId,
         offset: 0,
-        payload: makeErrorPayload("stream expired")
+        payload: makeErrorPayload("stream expired"),
       });
       this.dropStream(stream);
     }
@@ -5000,15 +5389,20 @@ var BrokerState = class {
         helper_session_id: query.helperSessionId,
         helper_request_id: query.helperRequestId,
         agent_session_id: query.agentSessionId,
-        agent_request_id: query.agentRequestId
+        agent_request_id: query.agentRequestId,
       });
-      this.queueFrame("helper", query.helperSessionId, {
-        typeId: FRAME_DNS_FAIL,
-        flags: 0,
-        streamId: query.helperRequestId,
-        offset: 0,
-        payload: makeErrorPayload("dns query expired")
-      }, "pri");
+      this.queueFrame(
+        "helper",
+        query.helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: query.helperRequestId,
+          offset: 0,
+          payload: makeErrorPayload("dns query expired"),
+        },
+        "pri",
+      );
       this.dropDnsQuery(query, "query-expired");
     }
   }
@@ -5030,9 +5424,15 @@ var BrokerState = class {
           bulk_buffered_bytes: peer.dataBulkQueue.bufferedBytes,
           last_seen_age_ms: Math.max(0, nowMs() - peer.lastSeenMs),
           channel_open: {
-            ctl: Boolean(peer.channels.ctl && peer.channels.ctl.readyState === WebSocket.OPEN),
-            data: Boolean(peer.channels.data && peer.channels.data.readyState === WebSocket.OPEN)
-          }
+            ctl: Boolean(
+              peer.channels.ctl &&
+              peer.channels.ctl.readyState === WebSocket.OPEN,
+            ),
+            data: Boolean(
+              peer.channels.data &&
+              peer.channels.data.readyState === WebSocket.OPEN,
+            ),
+          },
         });
       }
     }
@@ -5047,25 +5447,27 @@ var BrokerState = class {
       base_uri: this.baseUri,
       log_paths: {
         runtime: RUNTIME_LOG_PATH,
-        events: EVENT_LOG_PATH
+        events: EVENT_LOG_PATH,
       },
       buffered_ctl_bytes: buffered.ctl,
       buffered_pri_bytes: buffered.pri,
       buffered_bulk_bytes: buffered.bulk,
       capabilities: brokerCapabilities(),
       metrics: this.metrics,
-      recent_event_count: this.recentEvents.length
+      recent_event_count: this.recentEvents.length,
     };
     if (DEBUG_STATS_ENABLED) {
       payload.peer_details = peers;
-      payload.stream_details = Array.from(this.streamsByAgent.values()).slice(0, 32).map((stream) => ({
-        helper_session_id: stream.helperSessionId,
-        helper_stream_id: stream.helperStreamId,
-        agent_session_id: stream.agentSessionId,
-        agent_stream_id: stream.agentStreamId,
-        age_ms: Math.max(0, nowMs() - stream.createdAtMs),
-        last_seen_age_ms: Math.max(0, nowMs() - stream.lastSeenMs)
-      }));
+      payload.stream_details = Array.from(this.streamsByAgent.values())
+        .slice(0, 32)
+        .map((stream) => ({
+          helper_session_id: stream.helperSessionId,
+          helper_stream_id: stream.helperStreamId,
+          agent_session_id: stream.agentSessionId,
+          agent_stream_id: stream.agentStreamId,
+          age_ms: Math.max(0, nowMs() - stream.createdAtMs),
+          last_seen_age_ms: Math.max(0, nowMs() - stream.lastSeenMs),
+        }));
       payload.recent_events = this.recentEvents.slice(-64);
     }
     return payload;
@@ -5081,53 +5483,59 @@ if (!DEBUG_STATS_ENABLED && loadedConfig.debug_stats_enabled) {
 RUNTIME_LOG_PATH = resolveLogPath(
   loadedConfig.log_path,
   process.env.TWOMAN_RUNTIME_LOG_PATH || process.env.TWOMAN_LOG_PATH,
-  "node-broker.log"
+  "node-broker.log",
 );
 EVENT_LOG_PATH = resolveLogPath(
   loadedConfig.event_log_path,
   process.env.TWOMAN_EVENT_LOG_PATH,
-  "node-broker-events.ndjson"
+  "node-broker-events.ndjson",
 );
 RUNTIME_LOG_MAX_BYTES = coerceInt(
   loadedConfig.log_max_bytes || process.env.TWOMAN_RUNTIME_LOG_MAX_BYTES,
-  DEFAULT_RUNTIME_LOG_MAX_BYTES
+  DEFAULT_RUNTIME_LOG_MAX_BYTES,
 );
 RUNTIME_LOG_BACKUP_COUNT = coerceInt(
   loadedConfig.log_backup_count || process.env.TWOMAN_RUNTIME_LOG_BACKUP_COUNT,
   DEFAULT_RUNTIME_LOG_BACKUP_COUNT,
-  0
+  0,
 );
 EVENT_LOG_MAX_BYTES = coerceInt(
   loadedConfig.event_log_max_bytes || process.env.TWOMAN_EVENT_LOG_MAX_BYTES,
-  DEFAULT_EVENT_LOG_MAX_BYTES
+  DEFAULT_EVENT_LOG_MAX_BYTES,
 );
 EVENT_LOG_BACKUP_COUNT = coerceInt(
-  loadedConfig.event_log_backup_count || process.env.TWOMAN_EVENT_LOG_BACKUP_COUNT,
+  loadedConfig.event_log_backup_count ||
+    process.env.TWOMAN_EVENT_LOG_BACKUP_COUNT,
   DEFAULT_EVENT_LOG_BACKUP_COUNT,
-  0
+  0,
 );
 RECENT_EVENT_LIMIT = coerceInt(
   loadedConfig.recent_event_limit || process.env.TWOMAN_RECENT_EVENT_LIMIT,
-  DEFAULT_RECENT_EVENT_LIMIT
+  DEFAULT_RECENT_EVENT_LIMIT,
 );
-BINARY_MEDIA_TYPE = String(
-  loadedConfig.binary_media_type || process.env.TWOMAN_BINARY_MEDIA_TYPE || DEFAULT_BINARY_MEDIA_TYPE
-).trim() || DEFAULT_BINARY_MEDIA_TYPE;
+BINARY_MEDIA_TYPE =
+  String(
+    loadedConfig.binary_media_type ||
+      process.env.TWOMAN_BINARY_MEDIA_TYPE ||
+      DEFAULT_BINARY_MEDIA_TYPE,
+  ).trim() || DEFAULT_BINARY_MEDIA_TYPE;
 ensureLogDir(RUNTIME_LOG_PATH);
 ensureLogDir(EVENT_LOG_PATH);
 var state = new BrokerState(loadedConfig);
 state.recordEvent("broker_loaded", {
   config_path: CONFIG_PATH,
   runtime_log_path: RUNTIME_LOG_PATH,
-  event_log_path: EVENT_LOG_PATH
+  event_log_path: EVENT_LOG_PATH,
 });
-runtimeLog(`broker loaded config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
+runtimeLog(
+  `broker loaded config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`,
+);
 function jsonResponse(res, statusCode, payload) {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
     "Content-Length": String(body.length),
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
   });
   res.end(body);
 }
@@ -5149,10 +5557,16 @@ function parseCookieHeader(value) {
   return cookies;
 }
 function normalizeMediaType(value) {
-  return String(value || "").split(";", 1)[0].trim().toLowerCase();
+  return String(value || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
 }
 function validateBinaryMediaType(value) {
-  const allowed = /* @__PURE__ */ new Set([BINARY_MEDIA_TYPE, "application/octet-stream"]);
+  const allowed = /* @__PURE__ */ new Set([
+    BINARY_MEDIA_TYPE,
+    "application/octet-stream",
+  ]);
   if (!allowed.has(normalizeMediaType(value))) {
     throw new Error(`invalid binary content type: ${value || "<missing>"}`);
   }
@@ -5167,7 +5581,7 @@ function parseLaneRoute(route) {
   }
   return {
     lane: parts[parts.length - 2],
-    direction: parts[parts.length - 1]
+    direction: parts[parts.length - 1],
   };
 }
 function parseWebSocketLaneRoute(route) {
@@ -5191,12 +5605,14 @@ function connectionHeaders(req) {
     token,
     role: String(cookies._cf_role || req.headers["x-cf-role"] || ""),
     peer: String(cookies._cf_lspa || req.headers["x-cf-lspa"] || ""),
-    session: String(cookies._wp_syncId || req.headers["x-wp-syncid"] || "")
+    session: String(cookies._wp_syncId || req.headers["x-wp-syncid"] || ""),
   };
 }
 function isObserverAuthorized(req) {
   const identity = connectionHeaders(req);
-  return state.auth("helper", identity.token) || state.auth("agent", identity.token);
+  return (
+    state.auth("helper", identity.token) || state.auth("agent", identity.token)
+  );
 }
 async function handleConnectProbe(req, res, url) {
   const host = url.searchParams.get("host") || "";
@@ -5220,7 +5636,9 @@ async function handleConnectProbe(req, res, url) {
     };
     socket.once("connect", () => finish({ ok: true }));
     socket.once("timeout", () => finish({ ok: false, error: "timeout" }));
-    socket.once("error", (error) => finish({ ok: false, error: String(error.message || error) }));
+    socket.once("error", (error) =>
+      finish({ ok: false, error: String(error.message || error) }),
+    );
     socket.connect(port, host);
   });
   if (result.ok) {
@@ -5233,7 +5651,7 @@ async function handleConnectProbe(req, res, url) {
     port,
     ok: result.ok,
     error: result.error || "",
-    time_ms: Date.now() - started
+    time_ms: Date.now() - started,
   });
 }
 function handleChunkStream(res) {
@@ -5242,7 +5660,7 @@ function handleChunkStream(res) {
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     Connection: "keep-alive",
-    "Transfer-Encoding": "chunked"
+    "Transfer-Encoding": "chunked",
   });
   let count = 0;
   const timer = setInterval(() => {
@@ -5265,14 +5683,14 @@ async function handleUploadProbe(req, res) {
     events.push({
       offset_ms: Date.now() - started,
       chunk_bytes: chunk.length,
-      total_bytes: totalBytes
+      total_bytes: totalBytes,
     });
   }
   jsonResponse(res, 200, {
     ok: true,
     total_bytes: totalBytes,
     chunks: events.length,
-    events
+    events,
   });
 }
 function processInboundFrames(role, sessionId, externalLane, decoder, chunk) {
@@ -5306,13 +5724,21 @@ async function handleLaneDownStream(peer, lane, res) {
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     Connection: "keep-alive",
-    "Transfer-Encoding": "chunked"
+    "Transfer-Encoding": "chunked",
   });
   try {
     let tokenStr = "twoman-default-key";
-    if (peer.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
+    if (
+      peer.role === "agent" &&
+      loadedConfig.agent_tokens &&
+      loadedConfig.agent_tokens.length > 0
+    ) {
       tokenStr = loadedConfig.agent_tokens[0];
-    } else if (peer.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
+    } else if (
+      peer.role !== "agent" &&
+      loadedConfig.client_tokens &&
+      loadedConfig.client_tokens.length > 0
+    ) {
       tokenStr = loadedConfig.client_tokens[0];
     }
     const iv = crypto.randomBytes(16);
@@ -5320,8 +5746,15 @@ async function handleLaneDownStream(peer, lane, res) {
     if (!res.write(iv)) {
       await new Promise((resolve) => res.once("drain", resolve));
     }
-    while (!closed && !res.writableEnded && Date.now() - started < maxDurationMs) {
-      const payload = lane === LANE_CTL ? await state.nextCtlPayload(peer, waitTimeoutMs) : await state.nextDataPayload(peer, waitTimeoutMs);
+    while (
+      !closed &&
+      !res.writableEnded &&
+      Date.now() - started < maxDurationMs
+    ) {
+      const payload =
+        lane === LANE_CTL
+          ? await state.nextCtlPayload(peer, waitTimeoutMs)
+          : await state.nextDataPayload(peer, waitTimeoutMs);
       if (!payload || payload.length === 0) {
         continue;
       }
@@ -5382,11 +5815,20 @@ var server = http.createServer(async (req, res) => {
     return;
   }
   const parsedRoute = parseLaneRoute(route);
-  if (parsedRoute && (parsedRoute.lane === LANE_CTL || parsedRoute.lane === LANE_DATA) && (parsedRoute.direction === "up" || parsedRoute.direction === "down")) {
+  if (
+    parsedRoute &&
+    (parsedRoute.lane === LANE_CTL || parsedRoute.lane === LANE_DATA) &&
+    (parsedRoute.direction === "up" || parsedRoute.direction === "down")
+  ) {
     const lane = parsedRoute.lane;
     const direction = parsedRoute.direction;
     const headers = connectionHeaders(req);
-    if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
+    if (
+      !headers.role ||
+      !headers.peer ||
+      !headers.session ||
+      !state.auth(headers.role, headers.token)
+    ) {
       jsonResponse(res, 403, { error: "invalid role or token" });
       return;
     }
@@ -5403,9 +5845,17 @@ var server = http.createServer(async (req, res) => {
       let initCipher = null;
       let ivBuffer = Buffer.alloc(0);
       let tokenStr = "twoman-default-key";
-      if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
+      if (
+        headers.role === "agent" &&
+        loadedConfig.agent_tokens &&
+        loadedConfig.agent_tokens.length > 0
+      ) {
         tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
+      } else if (
+        headers.role !== "agent" &&
+        loadedConfig.client_tokens &&
+        loadedConfig.client_tokens.length > 0
+      ) {
         tokenStr = loadedConfig.client_tokens[0];
       }
       for await (let chunk of req) {
@@ -5422,7 +5872,13 @@ var server = http.createServer(async (req, res) => {
         }
         if (chunk.length > 0) {
           const ptChunk = initCipher.process(chunk);
-          frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
+          frameCount += processInboundFrames(
+            headers.role,
+            headers.session,
+            lane,
+            decoder,
+            ptChunk,
+          );
         }
       }
       jsonResponse(res, 200, { ok: true, frames: frameCount });
@@ -5430,19 +5886,38 @@ var server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && direction === "down") {
       const roleDownWaitMs = state.downWaitMsForRole(headers.role);
-      if (lane === LANE_CTL && (headers.role === "helper" && state.streamingCtlDownHelper || headers.role === "agent" && state.streamingCtlDownAgent)) {
+      if (
+        lane === LANE_CTL &&
+        ((headers.role === "helper" && state.streamingCtlDownHelper) ||
+          (headers.role === "agent" && state.streamingCtlDownAgent))
+      ) {
         await handleLaneDownStream(peer, lane, res);
         return;
       }
-      if (lane === LANE_DATA && (headers.role === "helper" && state.streamingDataDownHelper || headers.role === "agent" && state.streamingDataDownAgent)) {
+      if (
+        lane === LANE_DATA &&
+        ((headers.role === "helper" && state.streamingDataDownHelper) ||
+          (headers.role === "agent" && state.streamingDataDownAgent))
+      ) {
         await handleLaneDownStream(peer, lane, res);
         return;
       }
-      const payload = lane === LANE_CTL ? await state.nextCtlPayload(peer, roleDownWaitMs.ctl) : await state.nextDataPayload(peer, roleDownWaitMs.data);
+      const payload =
+        lane === LANE_CTL
+          ? await state.nextCtlPayload(peer, roleDownWaitMs.ctl)
+          : await state.nextDataPayload(peer, roleDownWaitMs.data);
       let tokenStr = "twoman-default-key";
-      if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
+      if (
+        headers.role === "agent" &&
+        loadedConfig.agent_tokens &&
+        loadedConfig.agent_tokens.length > 0
+      ) {
         tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
+      } else if (
+        headers.role !== "agent" &&
+        loadedConfig.client_tokens &&
+        loadedConfig.client_tokens.length > 0
+      ) {
         tokenStr = loadedConfig.client_tokens[0];
       }
       const iv = crypto.randomBytes(16);
@@ -5451,7 +5926,7 @@ var server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         "Content-Type": BINARY_MEDIA_TYPE,
         "Content-Length": String(encPayload.length),
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
       });
       res.end(encPayload);
       return;
@@ -5484,7 +5959,12 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   const headers = connectionHeaders(req);
-  if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
+  if (
+    !headers.role ||
+    !headers.peer ||
+    !headers.session ||
+    !state.auth(headers.role, headers.token)
+  ) {
     socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
@@ -5503,12 +5983,26 @@ echoWss.on("connection", (ws) => {
 wss.on("connection", (ws) => {
   const headers = ws._twomanHeaders;
   const lane = ws._twomanLane;
-  const peer = state.bindChannel(headers.role, headers.peer, headers.session, lane, ws);
+  const peer = state.bindChannel(
+    headers.role,
+    headers.peer,
+    headers.session,
+    lane,
+    ws,
+  );
   const decoder = new FrameDecoder();
   let tokenStr = "twoman-default-key";
-  if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
+  if (
+    headers.role === "agent" &&
+    loadedConfig.agent_tokens &&
+    loadedConfig.agent_tokens.length > 0
+  ) {
     tokenStr = loadedConfig.agent_tokens[0];
-  } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
+  } else if (
+    headers.role !== "agent" &&
+    loadedConfig.client_tokens &&
+    loadedConfig.client_tokens.length > 0
+  ) {
     tokenStr = loadedConfig.client_tokens[0];
   }
   const sendIv = crypto.randomBytes(16);
@@ -5546,29 +6040,41 @@ wss.on("connection", (ws) => {
       peer.touch();
       state.metrics.ws_messages_in[lane] += 1;
       state.metrics.ws_bytes_in[lane] += ptData.length;
-      processInboundFrames(headers.role, headers.session, lane, decoder, ptData);
+      processInboundFrames(
+        headers.role,
+        headers.session,
+        lane,
+        decoder,
+        ptData,
+      );
     }
   });
   ws.on("close", () => {
     state.unbindChannel(ws._twomanPeerKey, lane, ws);
   });
   ws.on("error", (error) => {
-    trace(`ws error role=${headers.role} session=${headers.session} lane=${lane} error=${error}`);
-    runtimeLog(`ws error role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane} error=${error}`);
+    trace(
+      `ws error role=${headers.role} session=${headers.session} lane=${lane} error=${error}`,
+    );
+    runtimeLog(
+      `ws error role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane} error=${error}`,
+    );
     state.recordEvent("ws_error", {
       role: headers.role,
       peer_label: headers.peer,
       peer_session_id: headers.session,
       lane,
-      error: String(error && error.message ? error.message : error)
+      error: String(error && error.message ? error.message : error),
     });
   });
-  trace(`channel open role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane}`);
+  trace(
+    `channel open role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane}`,
+  );
   state.recordEvent("channel_open", {
     role: headers.role,
     peer_label: headers.peer,
     peer_session_id: headers.session,
-    lane
+    lane,
   });
 });
 setInterval(() => {
@@ -5586,28 +6092,38 @@ setInterval(() => {
 }, HEARTBEAT_INTERVAL_MS).unref();
 server.listen(process.env.PORT || 3e3, () => {
   trace(`listening pid=${process.pid} base_uri=${state.baseUri || "/"}`);
-  runtimeLog(`listening pid=${process.pid} base_uri=${state.baseUri || "/"} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
+  runtimeLog(
+    `listening pid=${process.pid} base_uri=${state.baseUri || "/"} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`,
+  );
   state.recordEvent("broker_started", {
     pid: process.pid,
     base_uri: state.baseUri || "/",
     runtime_log_path: RUNTIME_LOG_PATH,
-    event_log_path: EVENT_LOG_PATH
+    event_log_path: EVENT_LOG_PATH,
   });
 });
 process.on("uncaughtException", (error) => {
-  trace(`uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`);
-  runtimeLog(`uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`);
+  trace(
+    `uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`,
+  );
+  runtimeLog(
+    `uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`,
+  );
   state.recordEvent("uncaught_exception", {
     pid: process.pid,
-    error: String(error && error.stack ? error.stack : error)
+    error: String(error && error.stack ? error.stack : error),
   });
 });
 process.on("unhandledRejection", (reason) => {
-  trace(`unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`);
-  runtimeLog(`unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`);
+  trace(
+    `unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`,
+  );
+  runtimeLog(
+    `unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`,
+  );
   state.recordEvent("unhandled_rejection", {
     pid: process.pid,
-    reason: String(reason && reason.stack ? reason.stack : reason)
+    reason: String(reason && reason.stack ? reason.stack : reason),
   });
 });
 process.on("beforeExit", (code) => {

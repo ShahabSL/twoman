@@ -11,44 +11,28 @@ class TransportCipher {
       keyBuffer = Buffer.from("twoman-default-key");
     }
     this.key = crypto.createHash("sha256").update(keyBuffer).digest();
-    this.iv = ivBuffer.length < 16 ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)]) : ivBuffer.subarray(0, 16);
-    this.blockIndex = 0n;
-    this.keystreamBuffer = Buffer.alloc(0);
-    this.streamOffset = 0;
-  }
 
-  _generateBlock() {
-    const indexBuf = Buffer.alloc(8);
-    indexBuf.writeBigUInt64BE(this.blockIndex, 0);
-    this.blockIndex += 1n;
-    const counterBytes = Buffer.concat([this.iv, indexBuf]);
-    return crypto.createHmac("sha256", this.key).update(counterBytes).digest();
-  }
+    this.iv =
+      ivBuffer.length < 16
+        ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)])
+        : ivBuffer.subarray(0, 16);
 
+    this._cipher = crypto.createCipheriv("aes-256-ctr", this.key, this.iv);
+  }
   process(data) {
     if (!data || data.length === 0) return Buffer.alloc(0);
-    const output = Buffer.alloc(data.length);
-    let processed = 0;
-    while (processed < data.length) {
-      if (this.keystreamBuffer.length === 0) {
-        this.keystreamBuffer = this._generateBlock();
-      }
-      const chunkSize = Math.min(data.length - processed, this.keystreamBuffer.length);
-      for (let i = 0; i < chunkSize; i++) {
-        output[processed + i] = data[processed + i] ^ this.keystreamBuffer[i];
-      }
-      this.keystreamBuffer = this.keystreamBuffer.subarray(chunkSize);
-      processed += chunkSize;
-    }
-    this.streamOffset += data.length;
-    return output;
+    return this._cipher.update(data);
   }
 }
-
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
-const CONFIG_PATH = process.env.TWOMAN_CONFIG_PATH || path.join(__dirname, "config.json");
-let TRACE_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(process.env.TWOMAN_TRACE || "");
-let DEBUG_STATS_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(process.env.TWOMAN_DEBUG_STATS || "");
+const CONFIG_PATH =
+  process.env.TWOMAN_CONFIG_PATH || path.join(__dirname, "config.json");
+let TRACE_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(
+  process.env.TWOMAN_TRACE || "",
+);
+let DEBUG_STATS_ENABLED = /^(1|true|yes|on|debug|verbose)$/i.test(
+  process.env.TWOMAN_DEBUG_STATS || "",
+);
 const HEARTBEAT_INTERVAL_MS = 20000;
 const DEFAULT_RUNTIME_LOG_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_RUNTIME_LOG_BACKUP_COUNT = 3;
@@ -81,7 +65,11 @@ const FLAG_DATA_BULK = 1;
 const LANE_CTL = "ctl";
 const LANE_DATA = "data";
 const DEFAULT_DATA_REPLAY_RESEND_MS = 750;
-const DNS_FRAME_TYPES = new Set([FRAME_DNS_QUERY, FRAME_DNS_RESPONSE, FRAME_DNS_FAIL]);
+const DNS_FRAME_TYPES = new Set([
+  FRAME_DNS_QUERY,
+  FRAME_DNS_RESPONSE,
+  FRAME_DNS_FAIL,
+]);
 const PROFILE_SHARED_HOST_SAFE = "shared_host_safe";
 const PROFILE_MANAGED_HOST_HTTP = "managed_host_http";
 const PROFILE_MANAGED_HOST_WS = "managed_host_ws";
@@ -96,10 +84,19 @@ function coerceInt(value, fallbackValue, minimum = 1) {
 }
 
 function brokerCapabilities() {
-  const agentDownWaitMs = state ? state.downWaitMsForRole("agent") : { ctl: 1000, data: 1000 };
-  const agentDownReadTimeoutSeconds = Math.max(15.0, (Math.max(agentDownWaitMs.ctl, agentDownWaitMs.data) / 1000.0) + 10.0);
-  const helperDownCombinedDataLane = state ? state.helperDownCombinedDataLane : false;
-  const agentDownCombinedDataLane = state ? state.agentDownCombinedDataLane : false;
+  const agentDownWaitMs = state
+    ? state.downWaitMsForRole("agent")
+    : { ctl: 1000, data: 1000 };
+  const agentDownReadTimeoutSeconds = Math.max(
+    15.0,
+    Math.max(agentDownWaitMs.ctl, agentDownWaitMs.data) / 1000.0 + 10.0,
+  );
+  const helperDownCombinedDataLane = state
+    ? state.helperDownCombinedDataLane
+    : false;
+  const agentDownCombinedDataLane = state
+    ? state.agentDownCombinedDataLane
+    : false;
   const websocketPublicEnabled = state ? state.websocketPublicEnabled : false;
   const supportedProfiles = [PROFILE_MANAGED_HOST_HTTP];
   if (websocketPublicEnabled) {
@@ -118,10 +115,10 @@ function brokerCapabilities() {
           down_lanes: helperDownCombinedDataLane ? ["data"] : [],
           down_parallelism: { data: 2 },
           upload_profiles: {
-            data: { max_batch_bytes: 65536, flush_delay_seconds: 0.004 }
+            data: { max_batch_bytes: 65536, flush_delay_seconds: 0.004 },
           },
-          idle_repoll_delay_seconds: { ctl: 0.05, data: 0.10 },
-          streaming_up_lanes: []
+          idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
+          streaming_up_lanes: [],
         },
         agent: {
           http2_enabled: { ctl: false, data: false },
@@ -129,29 +126,29 @@ function brokerCapabilities() {
           proxy_keepalive_connections: 2,
           proxy_keepalive_expiry_seconds: 15.0,
           upload_profiles: {
-            data: { max_batch_bytes: 131072, flush_delay_seconds: 0.006 }
+            data: { max_batch_bytes: 131072, flush_delay_seconds: 0.006 },
           },
           down_read_timeout_seconds: agentDownReadTimeoutSeconds,
-          idle_repoll_delay_seconds: { ctl: 0.05, data: 0.10 },
+          idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
           streaming_up_lanes: [],
-          ...(agentDownCombinedDataLane ? { stream_control_lane: "pri" } : {})
-        }
+          ...(agentDownCombinedDataLane ? { stream_control_lane: "pri" } : {}),
+        },
       },
       [PROFILE_MANAGED_HOST_WS]: {
         transport: "ws",
         helper: {
-          streaming_up_lanes: []
+          streaming_up_lanes: [],
         },
         agent: {
-          streaming_up_lanes: []
-        }
-      }
+          streaming_up_lanes: [],
+        },
+      },
     },
     camouflage: {
       binary_media_type: BINARY_MEDIA_TYPE,
       route_template: loadedConfig.route_template || "/{lane}/{direction}",
-      health_template: loadedConfig.health_template || "/health"
-    }
+      health_template: loadedConfig.health_template || "/health",
+    },
   };
 }
 
@@ -206,7 +203,9 @@ function appendRotatedLine(filePath, maxBytes, backupCount, line) {
   try {
     ensureLogDir(filePath);
     const incomingBytes = Buffer.byteLength(line, "utf8");
-    const currentSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    const currentSize = fs.existsSync(filePath)
+      ? fs.statSync(filePath).size
+      : 0;
     if (maxBytes > 0 && currentSize + incomingBytes > maxBytes) {
       rotateFile(filePath, backupCount);
     }
@@ -220,19 +219,23 @@ function normalizeLaneProfiles(config) {
   const defaults = {
     ctl: { maxBytes: 4096, maxFrames: 8, holdMs: 1, padMin: 1024 },
     pri: { maxBytes: 32768, maxFrames: 16, holdMs: 2, padMin: 1024 },
-    bulk: { maxBytes: 262144, maxFrames: 64, holdMs: 4, padMin: 0 }
+    bulk: { maxBytes: 262144, maxFrames: 64, holdMs: 4, padMin: 0 },
   };
-  const configured = (config && typeof config.lane_profiles === "object" && config.lane_profiles) || {};
+  const configured =
+    (config &&
+      typeof config.lane_profiles === "object" &&
+      config.lane_profiles) ||
+    {};
   const normalized = {
     ctl: { ...defaults.ctl },
     pri: { ...defaults.pri },
-    bulk: { ...defaults.bulk }
+    bulk: { ...defaults.bulk },
   };
   const aliasFor = {
     maxBytes: "max_bytes",
     maxFrames: "max_frames",
     holdMs: "hold_ms",
-    padMin: "pad_min"
+    padMin: "pad_min",
   };
   for (const lane of Object.keys(normalized)) {
     const override = configured[lane];
@@ -248,7 +251,7 @@ function normalizeLaneProfiles(config) {
       if (!Number.isFinite(numeric)) {
         continue;
       }
-      const minimum = (key === "maxBytes" || key === "maxFrames") ? 1 : 0;
+      const minimum = key === "maxBytes" || key === "maxFrames" ? 1 : 0;
       normalized[lane][key] = Math.max(minimum, Math.trunc(numeric));
     }
   }
@@ -259,7 +262,12 @@ function runtimeLog(message) {
   if (!RUNTIME_LOG_PATH) {
     return;
   }
-  appendRotatedLine(RUNTIME_LOG_PATH, RUNTIME_LOG_MAX_BYTES, RUNTIME_LOG_BACKUP_COUNT, `${new Date().toISOString()} ${message}\n`);
+  appendRotatedLine(
+    RUNTIME_LOG_PATH,
+    RUNTIME_LOG_MAX_BYTES,
+    RUNTIME_LOG_BACKUP_COUNT,
+    `${new Date().toISOString()} ${message}\n`,
+  );
 }
 
 function jsonSafe(value) {
@@ -306,13 +314,28 @@ function makeErrorPayload(message) {
 function paddedPayload(payload, minimumSize) {
   let body = payload || Buffer.alloc(0);
   while (body.length < minimumSize) {
-    body = Buffer.concat([body, encodeFrame({ typeId: FRAME_PING, flags: 0, streamId: 0, offset: nowMs(), payload: Buffer.alloc(0) })]);
+    body = Buffer.concat([
+      body,
+      encodeFrame({
+        typeId: FRAME_PING,
+        flags: 0,
+        streamId: 0,
+        offset: nowMs(),
+        payload: Buffer.alloc(0),
+      }),
+    ]);
   }
   return body;
 }
 
 function pingFramePayload() {
-  return encodeFrame({ typeId: FRAME_PING, flags: 0, streamId: 0, offset: nowMs(), payload: Buffer.alloc(0) });
+  return encodeFrame({
+    typeId: FRAME_PING,
+    flags: 0,
+    streamId: 0,
+    offset: nowMs(),
+    payload: Buffer.alloc(0),
+  });
 }
 
 function encodeFrame(frame) {
@@ -399,7 +422,11 @@ class PeerState {
   }
 
   bufferedBytesTotal() {
-    return this.ctlQueue.bufferedBytes + this.dataPriQueue.bufferedBytes + this.dataBulkQueue.bufferedBytes;
+    return (
+      this.ctlQueue.bufferedBytes +
+      this.dataPriQueue.bufferedBytes +
+      this.dataBulkQueue.bufferedBytes
+    );
   }
 
   notifyWaiters(lane) {
@@ -433,7 +460,13 @@ class PeerState {
 }
 
 class StreamState {
-  constructor(helperSessionId, helperPeerLabel, helperStreamId, agentSessionId, agentStreamId) {
+  constructor(
+    helperSessionId,
+    helperPeerLabel,
+    helperStreamId,
+    agentSessionId,
+    agentStreamId,
+  ) {
     this.helperSessionId = helperSessionId;
     this.helperPeerLabel = helperPeerLabel;
     this.helperStreamId = Number(helperStreamId);
@@ -455,7 +488,13 @@ class StreamState {
 }
 
 class DnsQueryState {
-  constructor(helperSessionId, helperPeerLabel, helperRequestId, agentSessionId, agentRequestId) {
+  constructor(
+    helperSessionId,
+    helperPeerLabel,
+    helperRequestId,
+    agentSessionId,
+    agentRequestId,
+  ) {
     this.helperSessionId = helperSessionId;
     this.helperPeerLabel = helperPeerLabel;
     this.helperRequestId = Number(helperRequestId);
@@ -473,7 +512,9 @@ class DnsQueryState {
 class BrokerState {
   constructor(config) {
     this.config = config;
-    this.baseUri = String(config.base_uri || process.env.TWOMAN_BASE_URI || "").replace(/\/+$/, "");
+    this.baseUri = String(
+      config.base_uri || process.env.TWOMAN_BASE_URI || "",
+    ).replace(/\/+$/, "");
     this.clientTokens = new Set(config.client_tokens || []);
     this.agentTokens = new Set(config.agent_tokens || []);
     this.peerTtlMs = Number(config.peer_ttl_seconds || 90) * 1000;
@@ -481,17 +522,36 @@ class BrokerState {
     this.dnsQueryTtlMs = Number(config.dns_query_ttl_seconds || 30) * 1000;
     this.maxLaneBytes = Number(config.max_lane_bytes || 16 * 1024 * 1024);
     this.maxPeerBufferedBytes = Number(
-      config.max_peer_buffered_bytes || Math.min(this.maxLaneBytes * 2, 32 * 1024 * 1024)
+      config.max_peer_buffered_bytes ||
+        Math.min(this.maxLaneBytes * 2, 32 * 1024 * 1024),
     );
-    this.maxStreamsPerPeerSession = Math.max(1, Number(config.max_streams_per_peer_session || 256));
-    this.maxOpenRatePerPeerSession = Math.max(1, Number(config.max_open_rate_per_peer_session || 120));
-    this.openRateWindowMs = Math.max(1000, Number(config.open_rate_window_seconds || 10) * 1000);
-    this.flushBackpressureBytes = Number(config.flush_backpressure_bytes || 512 * 1024);
+    this.maxStreamsPerPeerSession = Math.max(
+      1,
+      Number(config.max_streams_per_peer_session || 256),
+    );
+    this.maxOpenRatePerPeerSession = Math.max(
+      1,
+      Number(config.max_open_rate_per_peer_session || 120),
+    );
+    this.openRateWindowMs = Math.max(
+      1000,
+      Number(config.open_rate_window_seconds || 10) * 1000,
+    );
+    this.flushBackpressureBytes = Number(
+      config.flush_backpressure_bytes || 512 * 1024,
+    );
     this.flushRetryDelayMs = Number(config.flush_retry_delay_ms || 5);
-    this.dataReplayResendMs = Math.max(50, Number(config.data_replay_resend_ms || DEFAULT_DATA_REPLAY_RESEND_MS));
+    this.dataReplayResendMs = Math.max(
+      50,
+      Number(config.data_replay_resend_ms || DEFAULT_DATA_REPLAY_RESEND_MS),
+    );
     this.downWaitMsByRole = this.normalizeRoleDownWaitMs(config);
-    this.helperDownCombinedDataLane = Boolean(config.helper_down_combined_data_lane);
-    this.agentDownCombinedDataLane = Boolean(config.agent_down_combined_data_lane);
+    this.helperDownCombinedDataLane = Boolean(
+      config.helper_down_combined_data_lane,
+    );
+    this.agentDownCombinedDataLane = Boolean(
+      config.agent_down_combined_data_lane,
+    );
     this.websocketPublicEnabled = Boolean(config.websocket_public_enabled);
     this.streamingCtlDownHelper = Boolean(config.streaming_ctl_down_helper);
     this.streamingDataDownHelper = Boolean(config.streaming_data_down_helper);
@@ -516,13 +576,16 @@ class BrokerState {
       ws_bytes_out: { ctl: 0, data: 0 },
       frames_in: { ctl: 0, pri: 0, bulk: 0 },
       frames_out: { ctl: 0, pri: 0, bulk: 0 },
-      connect_probe: { ok: 0, fail: 0 }
+      connect_probe: { ok: 0, fail: 0 },
     };
     this.recentEvents = [];
   }
 
   normalizeDownWaitMs(rawConfig) {
-    const ctl = Math.max(50, Number(rawConfig.ctl || rawConfig.control || 1000));
+    const ctl = Math.max(
+      50,
+      Number(rawConfig.ctl || rawConfig.control || 1000),
+    );
     const data = Math.max(50, Number(rawConfig.data || 1000));
     return { ctl, data };
   }
@@ -531,9 +594,13 @@ class BrokerState {
     const base = this.normalizeDownWaitMs(config.down_wait_ms || {});
     const values = {
       helper: { ...base },
-      agent: { ...base }
+      agent: { ...base },
     };
-    const byRole = (config && typeof config.down_wait_ms_by_role === "object" && config.down_wait_ms_by_role) || {};
+    const byRole =
+      (config &&
+        typeof config.down_wait_ms_by_role === "object" &&
+        config.down_wait_ms_by_role) ||
+      {};
     for (const role of ["helper", "agent"]) {
       const override = byRole[role];
       if (!override || typeof override !== "object") {
@@ -557,28 +624,35 @@ class BrokerState {
       return frameTypeId === FRAME_DATA ? inboundLane : "pri";
     }
     if (targetRole === "helper" && this.helperDownCombinedDataLane) {
-      return (frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)) ? inboundLane : "pri";
+      return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)
+        ? inboundLane
+        : "pri";
     }
-    return (frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)) ? inboundLane : null;
+    return frameTypeId === FRAME_DATA || DNS_FRAME_TYPES.has(frameTypeId)
+      ? inboundLane
+      : null;
   }
 
   recordEvent(kind, details, options = {}) {
     const event = {
       ts: new Date().toISOString(),
       kind,
-      ...jsonSafe(details)
+      ...jsonSafe(details),
     };
     if (options.durable !== false && EVENT_LOG_PATH) {
       appendRotatedLine(
         EVENT_LOG_PATH,
         EVENT_LOG_MAX_BYTES,
         EVENT_LOG_BACKUP_COUNT,
-        `${JSON.stringify(event)}\n`
+        `${JSON.stringify(event)}\n`,
       );
     }
     this.recentEvents.push(event);
     if (this.recentEvents.length > RECENT_EVENT_LIMIT) {
-      this.recentEvents.splice(0, this.recentEvents.length - RECENT_EVENT_LIMIT);
+      this.recentEvents.splice(
+        0,
+        this.recentEvents.length - RECENT_EVENT_LIMIT,
+      );
     }
   }
 
@@ -605,7 +679,11 @@ class BrokerState {
   }
 
   normalizePath(rawPath) {
-    if (rawPath === "/health" || rawPath === "/pid" || rawPath === "/connect-probe") {
+    if (
+      rawPath === "/health" ||
+      rawPath === "/pid" ||
+      rawPath === "/connect-probe"
+    ) {
       return rawPath;
     }
     if (this.baseUri && rawPath.startsWith(this.baseUri)) {
@@ -622,11 +700,13 @@ class BrokerState {
       peer = new PeerState(role, peerLabel, peerSessionId);
       this.peers.set(key, peer);
       this.metrics.peer_connects += 1;
-      trace(`peer online role=${role} label=${peerLabel} session=${peerSessionId}`);
+      trace(
+        `peer online role=${role} label=${peerLabel} session=${peerSessionId}`,
+      );
       this.recordEvent("peer_online", {
         role,
         peer_label: peerLabel,
-        peer_session_id: peerSessionId
+        peer_session_id: peerSessionId,
       });
     }
     peer.touch();
@@ -645,12 +725,12 @@ class BrokerState {
     }
     const start = requestId;
     while (this.dnsQueriesByAgent.has(requestId)) {
-      requestId = requestId >= 0xFFFFFFFF ? 1 : requestId + 1;
+      requestId = requestId >= 0xffffffff ? 1 : requestId + 1;
       if (requestId === start) {
         throw new Error("no available agent dns request ids");
       }
     }
-    this.nextAgentDnsRequestId = requestId >= 0xFFFFFFFF ? 1 : requestId + 1;
+    this.nextAgentDnsRequestId = requestId >= 0xffffffff ? 1 : requestId + 1;
     return requestId;
   }
 
@@ -676,7 +756,7 @@ class BrokerState {
         role: peer.role,
         peer_label: peer.peerLabel,
         peer_session_id: peer.peerSessionId,
-        lane
+        lane,
       });
     }
   }
@@ -684,39 +764,54 @@ class BrokerState {
   queueFrame(role, peerSessionId, frame, queueLane = null) {
     const peer = this.peers.get(this.peerKey(role, peerSessionId));
     if (!peer) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=no-peer`);
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=no-peer`,
+      );
       this.recordEvent("queue_drop", {
         reason: "no-peer",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
     const encoded = encodeFrame(frame);
-    if (this.maxPeerBufferedBytes && peer.bufferedBytesTotal() >= this.maxPeerBufferedBytes) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=peer-buffer-full`);
+    if (
+      this.maxPeerBufferedBytes &&
+      peer.bufferedBytesTotal() >= this.maxPeerBufferedBytes
+    ) {
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=peer-buffer-full`,
+      );
       this.recordEvent("queue_drop", {
         reason: "peer-buffer-full",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
-    if (frame.typeId === FRAME_DATA || queueLane === "pri" || queueLane === "bulk") {
-      const dataLane = queueLane || ((frame.flags & FLAG_DATA_BULK) ? "bulk" : "pri");
-      const targetQueue = dataLane === "bulk" ? peer.dataBulkQueue : peer.dataPriQueue;
+    if (
+      frame.typeId === FRAME_DATA ||
+      queueLane === "pri" ||
+      queueLane === "bulk"
+    ) {
+      const dataLane =
+        queueLane || (frame.flags & FLAG_DATA_BULK ? "bulk" : "pri");
+      const targetQueue =
+        dataLane === "bulk" ? peer.dataBulkQueue : peer.dataPriQueue;
       if (targetQueue.bufferedBytes >= this.maxLaneBytes) {
-        trace(`drop data stream=${frame.streamId} role=${role} session=${peerSessionId} reason=data-queue-full`);
+        trace(
+          `drop data stream=${frame.streamId} role=${role} session=${peerSessionId} reason=data-queue-full`,
+        );
         this.recordEvent("queue_drop", {
           reason: "data-queue-full",
           role,
           peer_session_id: peerSessionId,
           type_id: frame.typeId,
-          stream_id: frame.streamId
+          stream_id: frame.streamId,
         });
         return false;
       }
@@ -727,19 +822,23 @@ class BrokerState {
           streamId: frame.streamId,
           endOffset: Number(frame.offset || 0) + encoded.readUInt32BE(16),
           sentAtMs: 0,
-          replayLane: dataLane
+          replayLane: dataLane,
         };
         peer.dataReplay[dataLane].push(entry);
         peer.dataReplayByPayload.set(encoded, entry);
       } else {
-        this.recordEvent("queue_ctl", {
-          role,
-          peer_session_id: peerSessionId,
-          lane: dataLane,
-          type_id: frame.typeId,
-          stream_id: frame.streamId,
-          payload_bytes: frame.payload ? frame.payload.length : 0
-        }, { durable: false });
+        this.recordEvent(
+          "queue_ctl",
+          {
+            role,
+            peer_session_id: peerSessionId,
+            lane: dataLane,
+            type_id: frame.typeId,
+            stream_id: frame.streamId,
+            payload_bytes: frame.payload ? frame.payload.length : 0,
+          },
+          { durable: false },
+        );
       }
       this.metrics.frames_out[dataLane] += 1;
       peer.notifyWaiters(LANE_DATA);
@@ -747,25 +846,31 @@ class BrokerState {
       return true;
     }
     if (peer.ctlQueue.bufferedBytes >= this.maxLaneBytes) {
-      trace(`drop ctl type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=ctl-queue-full`);
+      trace(
+        `drop ctl type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=ctl-queue-full`,
+      );
       this.recordEvent("queue_drop", {
         reason: "ctl-queue-full",
         role,
         peer_session_id: peerSessionId,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return false;
     }
     peer.ctlQueue.push(encoded);
     if (frame.typeId !== FRAME_PING) {
-      this.recordEvent("queue_ctl", {
-        role,
-        peer_session_id: peerSessionId,
-        type_id: frame.typeId,
-        stream_id: frame.streamId,
-        payload_bytes: frame.payload ? frame.payload.length : 0
-      }, { durable: false });
+      this.recordEvent(
+        "queue_ctl",
+        {
+          role,
+          peer_session_id: peerSessionId,
+          type_id: frame.typeId,
+          stream_id: frame.streamId,
+          payload_bytes: frame.payload ? frame.payload.length : 0,
+        },
+        { durable: false },
+      );
     }
     this.metrics.frames_out.ctl += 1;
     peer.notifyWaiters(LANE_CTL);
@@ -793,20 +898,28 @@ class BrokerState {
     const firstTypeId = first.readUInt8(0);
     const firstStreamId = first.readUInt32BE(4);
     if (firstTypeId !== FRAME_PING) {
-      this.recordEvent("dequeue_ctl", {
-        role: peer.role,
-        peer_session_id: peer.peerSessionId,
-        type_id: firstTypeId,
-        stream_id: firstStreamId,
-        bytes: first.length
-      }, { durable: false });
+      this.recordEvent(
+        "dequeue_ctl",
+        {
+          role: peer.role,
+          peer_session_id: peer.peerSessionId,
+          type_id: firstTypeId,
+          stream_id: firstStreamId,
+          bytes: first.length,
+        },
+        { durable: false },
+      );
     }
     const profile = this.laneProfile(LANE_CTL);
     const payloads = [first];
     let total = first.length;
     let frames = 1;
     const deadline = Date.now() + profile.holdMs;
-    while (total < profile.maxBytes && frames < profile.maxFrames && Date.now() < deadline) {
+    while (
+      total < profile.maxBytes &&
+      frames < profile.maxFrames &&
+      Date.now() < deadline
+    ) {
       const next = peer.ctlQueue.shift();
       if (!next) {
         break;
@@ -838,8 +951,12 @@ class BrokerState {
         sourceLane = "bulk";
       }
       if (!first) {
-        first = this.nextReplayPayload(peer, "pri") || this.nextReplayPayload(peer, "bulk");
-        sourceLane = first ? (peer.dataReplayByPayload.get(first)?.replayLane || "bulk") : sourceLane;
+        first =
+          this.nextReplayPayload(peer, "pri") ||
+          this.nextReplayPayload(peer, "bulk");
+        sourceLane = first
+          ? peer.dataReplayByPayload.get(first)?.replayLane || "bulk"
+          : sourceLane;
         if (!first) {
           return pingFramePayload();
         }
@@ -853,7 +970,11 @@ class BrokerState {
     let total = first.length;
     let frames = 1;
     const deadline = Date.now() + profile.holdMs;
-    while (total < profile.maxBytes && frames < profile.maxFrames && Date.now() < deadline) {
+    while (
+      total < profile.maxBytes &&
+      frames < profile.maxFrames &&
+      Date.now() < deadline
+    ) {
       let next = queue.shift();
       if (!next) {
         next = this.nextReplayPayload(peer, sourceLane);
@@ -866,7 +987,9 @@ class BrokerState {
       total += next.length;
       frames += 1;
     }
-    return profile.padMin > 0 ? paddedPayload(Buffer.concat(payloads), profile.padMin) : Buffer.concat(payloads);
+    return profile.padMin > 0
+      ? paddedPayload(Buffer.concat(payloads), profile.padMin)
+      : Buffer.concat(payloads);
   }
 
   noteDataSent(peer, payload) {
@@ -907,8 +1030,18 @@ class BrokerState {
   }
 
   clearStreamReplay(stream) {
-    this.pruneAckedData("helper", stream.helperSessionId, stream.helperStreamId, Number.MAX_SAFE_INTEGER);
-    this.pruneAckedData("agent", stream.agentSessionId, stream.agentStreamId, Number.MAX_SAFE_INTEGER);
+    this.pruneAckedData(
+      "helper",
+      stream.helperSessionId,
+      stream.helperStreamId,
+      Number.MAX_SAFE_INTEGER,
+    );
+    this.pruneAckedData(
+      "agent",
+      stream.agentSessionId,
+      stream.agentStreamId,
+      Number.MAX_SAFE_INTEGER,
+    );
   }
 
   scheduleFlush(peer, lane) {
@@ -958,14 +1091,18 @@ class BrokerState {
             peer.dataBulkQueue.bufferedBytes += payload.length;
           }
           peer.flushScheduled[lane] = false;
-          trace(`flush error lane=${lane} peer=${peer.peerSessionId} error=${error}`);
-          runtimeLog(`flush error lane=${lane} role=${peer.role} label=${peer.peerLabel} peer=${peer.peerSessionId} error=${error}`);
+          trace(
+            `flush error lane=${lane} peer=${peer.peerSessionId} error=${error}`,
+          );
+          runtimeLog(
+            `flush error lane=${lane} role=${peer.role} label=${peer.peerLabel} peer=${peer.peerSessionId} error=${error}`,
+          );
           this.recordEvent("flush_error", {
             lane,
             peer_role: peer.role,
             peer_label: peer.peerLabel,
             peer_session_id: peer.peerSessionId,
-            error: String(error && error.message ? error.message : error)
+            error: String(error && error.message ? error.message : error),
           });
           return;
         }
@@ -980,14 +1117,18 @@ class BrokerState {
       return;
     }
     if (frame.typeId !== FRAME_DATA) {
-      this.recordEvent("frame_in", {
-        sender_role: senderRole,
-        sender_peer_session_id: senderPeerSessionId,
-        lane,
-        type_id: frame.typeId,
-        stream_id: frame.streamId,
-        payload_bytes: frame.payload ? frame.payload.length : 0
-      }, { durable: false });
+      this.recordEvent(
+        "frame_in",
+        {
+          sender_role: senderRole,
+          sender_peer_session_id: senderPeerSessionId,
+          lane,
+          type_id: frame.typeId,
+          stream_id: frame.streamId,
+          payload_bytes: frame.payload ? frame.payload.length : 0,
+        },
+        { durable: false },
+      );
     }
     if (frame.typeId === FRAME_OPEN && senderRole === "helper") {
       this.handleOpen(senderPeerSessionId, frame);
@@ -997,25 +1138,43 @@ class BrokerState {
       this.handleDnsQuery(senderPeerSessionId, lane, frame);
       return;
     }
-    if (frame.typeId === FRAME_DNS_RESPONSE || frame.typeId === FRAME_DNS_FAIL) {
+    if (
+      frame.typeId === FRAME_DNS_RESPONSE ||
+      frame.typeId === FRAME_DNS_FAIL
+    ) {
       this.handleDnsResult(senderRole, senderPeerSessionId, lane, frame);
       return;
     }
-    const stream = senderRole === "helper"
-      ? this.streamsByHelper.get(this.streamHelperKey(senderPeerSessionId, frame.streamId))
-      : this.streamsByAgent.get(frame.streamId);
+    const stream =
+      senderRole === "helper"
+        ? this.streamsByHelper.get(
+            this.streamHelperKey(senderPeerSessionId, frame.streamId),
+          )
+        : this.streamsByAgent.get(frame.streamId);
     if (!stream) {
-      trace(`drop frame type=${frame.typeId} stream=${frame.streamId} from=${senderRole}/${senderPeerSessionId} lane=${lane} reason=unknown-stream`);
+      trace(
+        `drop frame type=${frame.typeId} stream=${frame.streamId} from=${senderRole}/${senderPeerSessionId} lane=${lane} reason=unknown-stream`,
+      );
       return;
     }
     stream.touch();
     if (frame.typeId === FRAME_WINDOW) {
       if (senderRole === "helper") {
         stream.helperAckOffset += Number(frame.offset || 0);
-        this.pruneAckedData("helper", stream.helperSessionId, stream.helperStreamId, stream.helperAckOffset);
+        this.pruneAckedData(
+          "helper",
+          stream.helperSessionId,
+          stream.helperStreamId,
+          stream.helperAckOffset,
+        );
       } else {
         stream.agentAckOffset += Number(frame.offset || 0);
-        this.pruneAckedData("agent", stream.agentSessionId, stream.agentStreamId, stream.agentAckOffset);
+        this.pruneAckedData(
+          "agent",
+          stream.agentSessionId,
+          stream.agentStreamId,
+          stream.agentAckOffset,
+        );
       }
     }
     if (frame.typeId === FRAME_FIN) {
@@ -1044,35 +1203,52 @@ class BrokerState {
       flags: frame.flags,
       streamId: outboundStreamId,
       offset: frame.offset,
-      payload: frame.payload
+      payload: frame.payload,
     };
     const targetLane = this.targetLaneForRole(targetRole, lane, frame.typeId);
-    const queued = this.queueFrame(targetRole, targetPeerSessionId, outboundFrame, targetLane);
+    const queued = this.queueFrame(
+      targetRole,
+      targetPeerSessionId,
+      outboundFrame,
+      targetLane,
+    );
     if (queued) {
-      this.recordEvent("frame_forward", {
-        sender_role: senderRole,
-        sender_peer_session_id: senderPeerSessionId,
-        target_role: targetRole,
-        target_peer_session_id: targetPeerSessionId,
-        type_id: frame.typeId,
-        source_stream_id: frame.streamId,
-        target_stream_id: outboundStreamId
-      }, { durable: false });
+      this.recordEvent(
+        "frame_forward",
+        {
+          sender_role: senderRole,
+          sender_peer_session_id: senderPeerSessionId,
+          target_role: targetRole,
+          target_peer_session_id: targetPeerSessionId,
+          type_id: frame.typeId,
+          source_stream_id: frame.streamId,
+          target_stream_id: outboundStreamId,
+        },
+        { durable: false },
+      );
     }
     if (!queued && senderRole === "helper") {
-      this.queueFrame("helper", senderPeerSessionId, {
-        typeId: FRAME_RST,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload("broker queue full")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        senderPeerSessionId,
+        {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("broker queue full"),
+        },
+        this.helperControlLane(),
+      );
     }
     if (frame.typeId === FRAME_RST) {
       this.dropStream(stream);
       return;
     }
-    if ((frame.typeId === FRAME_FIN || frame.typeId === FRAME_WINDOW) && this.streamDeliveryComplete(stream)) {
+    if (
+      (frame.typeId === FRAME_FIN || frame.typeId === FRAME_WINDOW) &&
+      this.streamDeliveryComplete(stream)
+    ) {
       this.dropStream(stream);
     }
   }
@@ -1085,7 +1261,10 @@ class BrokerState {
     if (!helperPeer) {
       openError = "helper session unavailable";
     }
-    if (agentSessionId && !this.peers.has(this.peerKey("agent", agentSessionId))) {
+    if (
+      agentSessionId &&
+      !this.peers.has(this.peerKey("agent", agentSessionId))
+    ) {
       agentSessionId = "";
     }
     let agentRequestId = 0;
@@ -1096,59 +1275,84 @@ class BrokerState {
         helperPeerLabel,
         frame.streamId,
         agentSessionId,
-        agentRequestId
+        agentRequestId,
       );
-      this.dnsQueriesByHelper.set(this.dnsHelperKey(helperSessionId, frame.streamId), query);
+      this.dnsQueriesByHelper.set(
+        this.dnsHelperKey(helperSessionId, frame.streamId),
+        query,
+      );
       this.dnsQueriesByAgent.set(agentRequestId, query);
       this.recordEvent("dns_query_map", {
         helper_session_id: helperSessionId,
         helper_peer_label: helperPeerLabel,
         helper_request_id: frame.streamId,
         agent_session_id: agentSessionId,
-        agent_request_id: agentRequestId
+        agent_request_id: agentRequestId,
       });
     }
     if (openError) {
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_DNS_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload(openError)
-      }, "pri");
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload(openError),
+        },
+        "pri",
+      );
       return;
     }
     if (!agentSessionId) {
-      this.queueFrame("helper", helperSessionId, {
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("hidden agent unavailable"),
+        },
+        "pri",
+      );
+      return;
+    }
+    const queued = this.queueFrame(
+      "agent",
+      agentSessionId,
+      {
+        typeId: FRAME_DNS_QUERY,
+        flags: frame.flags,
+        streamId: agentRequestId,
+        offset: frame.offset,
+        payload: frame.payload,
+      },
+      lane === "bulk" ? "bulk" : "pri",
+    );
+    if (queued) {
+      return;
+    }
+    const query = this.dnsQueriesByHelper.get(
+      this.dnsHelperKey(helperSessionId, frame.streamId),
+    );
+    if (query) {
+      this.dropDnsQuery(query, "agent-queue-failed");
+    }
+    this.queueFrame(
+      "helper",
+      helperSessionId,
+      {
         typeId: FRAME_DNS_FAIL,
         flags: 0,
         streamId: frame.streamId,
         offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
-      }, "pri");
-      return;
-    }
-    const queued = this.queueFrame("agent", agentSessionId, {
-      typeId: FRAME_DNS_QUERY,
-      flags: frame.flags,
-      streamId: agentRequestId,
-      offset: frame.offset,
-      payload: frame.payload
-    }, lane === "bulk" ? "bulk" : "pri");
-    if (queued) {
-      return;
-    }
-    const query = this.dnsQueriesByHelper.get(this.dnsHelperKey(helperSessionId, frame.streamId));
-    if (query) {
-      this.dropDnsQuery(query, "agent-queue-failed");
-    }
-    this.queueFrame("helper", helperSessionId, {
-      typeId: FRAME_DNS_FAIL,
-      flags: 0,
-      streamId: frame.streamId,
-      offset: 0,
-      payload: makeErrorPayload("hidden agent unavailable")
-    }, "pri");
+        payload: makeErrorPayload("hidden agent unavailable"),
+      },
+      "pri",
+    );
   }
 
   handleDnsResult(senderRole, senderPeerSessionId, lane, frame) {
@@ -1159,7 +1363,7 @@ class BrokerState {
         sender_peer_session_id: senderPeerSessionId,
         lane,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return;
     }
@@ -1171,18 +1375,23 @@ class BrokerState {
         sender_peer_session_id: senderPeerSessionId,
         lane,
         type_id: frame.typeId,
-        stream_id: frame.streamId
+        stream_id: frame.streamId,
       });
       return;
     }
     query.touch();
-    this.queueFrame("helper", query.helperSessionId, {
-      typeId: frame.typeId,
-      flags: frame.flags,
-      streamId: query.helperRequestId,
-      offset: frame.offset,
-      payload: frame.payload
-    }, lane === "bulk" ? "bulk" : "pri");
+    this.queueFrame(
+      "helper",
+      query.helperSessionId,
+      {
+        typeId: frame.typeId,
+        flags: frame.flags,
+        streamId: query.helperRequestId,
+        offset: frame.offset,
+        payload: frame.payload,
+      },
+      lane === "bulk" ? "bulk" : "pri",
+    );
     const liveQuery = this.dnsQueriesByAgent.get(frame.streamId);
     if (liveQuery) {
       this.dropDnsQuery(liveQuery, "completed");
@@ -1199,55 +1408,79 @@ class BrokerState {
     } else {
       openError = this.reserveHelperOpen(helperPeer);
     }
-    if (agentSessionId && !this.peers.has(this.peerKey("agent", agentSessionId))) {
+    if (
+      agentSessionId &&
+      !this.peers.has(this.peerKey("agent", agentSessionId))
+    ) {
       agentSessionId = "";
     }
     if (openError) {
       this.recordEvent("open_fail", {
         helper_session_id: helperSessionId,
         helper_stream_id: frame.streamId,
-        reason: openError
+        reason: openError,
       });
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_OPEN_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload(openError)
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_OPEN_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload(openError),
+        },
+        this.helperControlLane(),
+      );
       return;
     }
     if (!agentSessionId) {
       this.recordEvent("open_fail", {
         helper_session_id: helperSessionId,
         helper_stream_id: frame.streamId,
-        reason: "no-agent"
+        reason: "no-agent",
       });
-      this.queueFrame("helper", helperSessionId, {
-        typeId: FRAME_OPEN_FAIL,
-        flags: 0,
-        streamId: frame.streamId,
-        offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        helperSessionId,
+        {
+          typeId: FRAME_OPEN_FAIL,
+          flags: 0,
+          streamId: frame.streamId,
+          offset: 0,
+          payload: makeErrorPayload("hidden agent unavailable"),
+        },
+        this.helperControlLane(),
+      );
       return;
     }
     const agentStreamId = this.nextAgentStreamId++;
-    const stream = new StreamState(helperSessionId, helperPeerLabel, frame.streamId, agentSessionId, agentStreamId);
-    this.streamsByHelper.set(this.streamHelperKey(helperSessionId, frame.streamId), stream);
+    const stream = new StreamState(
+      helperSessionId,
+      helperPeerLabel,
+      frame.streamId,
+      agentSessionId,
+      agentStreamId,
+    );
+    this.streamsByHelper.set(
+      this.streamHelperKey(helperSessionId, frame.streamId),
+      stream,
+    );
     this.streamsByAgent.set(agentStreamId, stream);
     helperPeer.activeStreams += 1;
     const agentPeer = this.peers.get(this.peerKey("agent", agentSessionId));
     if (agentPeer) {
       agentPeer.activeStreams += 1;
     }
-    trace(`open helper=${helperPeerLabel}/${helperSessionId} helper_stream=${frame.streamId} agent_session=${agentSessionId} agent_stream=${agentStreamId}`);
+    trace(
+      `open helper=${helperPeerLabel}/${helperSessionId} helper_stream=${frame.streamId} agent_session=${agentSessionId} agent_stream=${agentStreamId}`,
+    );
     this.recordEvent("open_map", {
       helper_session_id: helperSessionId,
       helper_stream_id: frame.streamId,
       agent_session_id: agentSessionId,
       agent_stream_id: agentStreamId,
-      helper_peer_label: helperPeerLabel
+      helper_peer_label: helperPeerLabel,
     });
     this.queueFrame(
       "agent",
@@ -1257,16 +1490,18 @@ class BrokerState {
         flags: frame.flags,
         streamId: agentStreamId,
         offset: frame.offset,
-        payload: frame.payload
+        payload: frame.payload,
       },
-      this.agentDownCombinedDataLane ? "pri" : null
+      this.agentDownCombinedDataLane ? "pri" : null,
     );
   }
 
   reserveHelperOpen(peer) {
     const currentMs = nowMs();
     const windowStart = currentMs - this.openRateWindowMs;
-    peer.openEventsMs = peer.openEventsMs.filter((value) => value >= windowStart);
+    peer.openEventsMs = peer.openEventsMs.filter(
+      (value) => value >= windowStart,
+    );
     if (peer.activeStreams >= this.maxStreamsPerPeerSession) {
       return "too many concurrent streams";
     }
@@ -1279,7 +1514,9 @@ class BrokerState {
 
   dropStream(stream) {
     this.clearStreamReplay(stream);
-    this.streamsByHelper.delete(this.streamHelperKey(stream.helperSessionId, stream.helperStreamId));
+    this.streamsByHelper.delete(
+      this.streamHelperKey(stream.helperSessionId, stream.helperStreamId),
+    );
     this.streamsByAgent.delete(stream.agentStreamId);
     this.recordEvent("drop_stream", {
       helper_session_id: stream.helperSessionId,
@@ -1291,20 +1528,26 @@ class BrokerState {
       helper_fin_offset: stream.helperFinOffset,
       agent_fin_offset: stream.agentFinOffset,
       helper_ack_offset: stream.helperAckOffset,
-      agent_ack_offset: stream.agentAckOffset
+      agent_ack_offset: stream.agentAckOffset,
     });
-    const helperPeer = this.peers.get(this.peerKey("helper", stream.helperSessionId));
+    const helperPeer = this.peers.get(
+      this.peerKey("helper", stream.helperSessionId),
+    );
     if (helperPeer && helperPeer.activeStreams > 0) {
       helperPeer.activeStreams -= 1;
     }
-    const agentPeer = this.peers.get(this.peerKey("agent", stream.agentSessionId));
+    const agentPeer = this.peers.get(
+      this.peerKey("agent", stream.agentSessionId),
+    );
     if (agentPeer && agentPeer.activeStreams > 0) {
       agentPeer.activeStreams -= 1;
     }
   }
 
   dropDnsQuery(query, reason = "") {
-    this.dnsQueriesByHelper.delete(this.dnsHelperKey(query.helperSessionId, query.helperRequestId));
+    this.dnsQueriesByHelper.delete(
+      this.dnsHelperKey(query.helperSessionId, query.helperRequestId),
+    );
     this.dnsQueriesByAgent.delete(query.agentRequestId);
     this.recordEvent("drop_dns_query", {
       helper_session_id: query.helperSessionId,
@@ -1312,7 +1555,7 @@ class BrokerState {
       helper_request_id: query.helperRequestId,
       agent_session_id: query.agentSessionId,
       agent_request_id: query.agentRequestId,
-      reason
+      reason,
     });
   }
 
@@ -1320,8 +1563,12 @@ class BrokerState {
     if (!(stream.helperFinSeen && stream.agentFinSeen)) {
       return false;
     }
-    const helperDone = stream.agentFinOffset !== null && stream.helperAckOffset >= Number(stream.agentFinOffset);
-    const agentDone = stream.helperFinOffset !== null && stream.agentAckOffset >= Number(stream.helperFinOffset);
+    const helperDone =
+      stream.agentFinOffset !== null &&
+      stream.helperAckOffset >= Number(stream.agentFinOffset);
+    const agentDone =
+      stream.helperFinOffset !== null &&
+      stream.agentAckOffset >= Number(stream.helperFinOffset);
     return helperDone && agentDone;
   }
 
@@ -1335,7 +1582,10 @@ class BrokerState {
       }
       const staleStreams = [];
       for (const stream of this.streamsByAgent.values()) {
-        if (stream.helperSessionId === peer.peerSessionId || stream.agentSessionId === peer.peerSessionId) {
+        if (
+          stream.helperSessionId === peer.peerSessionId ||
+          stream.agentSessionId === peer.peerSessionId
+        ) {
           staleStreams.push(stream);
         }
       }
@@ -1347,7 +1597,7 @@ class BrokerState {
           helper_session_id: stream.helperSessionId,
           helper_stream_id: stream.helperStreamId,
           agent_session_id: stream.agentSessionId,
-          agent_stream_id: stream.agentStreamId
+          agent_stream_id: stream.agentStreamId,
         });
         if (peer.role === "helper" && stream.agentSessionId) {
           this.queueFrame("agent", stream.agentSessionId, {
@@ -1355,35 +1605,48 @@ class BrokerState {
             flags: 0,
             streamId: stream.agentStreamId,
             offset: 0,
-            payload: makeErrorPayload("peer expired")
+            payload: makeErrorPayload("peer expired"),
           });
         }
         if (peer.role === "agent" && stream.helperSessionId) {
-          this.queueFrame("helper", stream.helperSessionId, {
-            typeId: FRAME_RST,
-            flags: 0,
-            streamId: stream.helperStreamId,
-            offset: 0,
-            payload: makeErrorPayload("peer expired")
-          }, this.helperControlLane());
+          this.queueFrame(
+            "helper",
+            stream.helperSessionId,
+            {
+              typeId: FRAME_RST,
+              flags: 0,
+              streamId: stream.helperStreamId,
+              offset: 0,
+              payload: makeErrorPayload("peer expired"),
+            },
+            this.helperControlLane(),
+          );
         }
         this.dropStream(stream);
       }
       const staleDnsQueries = [];
       for (const query of this.dnsQueriesByAgent.values()) {
-        if (query.helperSessionId === peer.peerSessionId || query.agentSessionId === peer.peerSessionId) {
+        if (
+          query.helperSessionId === peer.peerSessionId ||
+          query.agentSessionId === peer.peerSessionId
+        ) {
           staleDnsQueries.push(query);
         }
       }
       for (const query of staleDnsQueries) {
         if (peer.role === "agent") {
-          this.queueFrame("helper", query.helperSessionId, {
-            typeId: FRAME_DNS_FAIL,
-            flags: 0,
-            streamId: query.helperRequestId,
-            offset: 0,
-            payload: makeErrorPayload("peer expired")
-          }, "pri");
+          this.queueFrame(
+            "helper",
+            query.helperSessionId,
+            {
+              typeId: FRAME_DNS_FAIL,
+              flags: 0,
+              streamId: query.helperRequestId,
+              offset: 0,
+              payload: makeErrorPayload("peer expired"),
+            },
+            "pri",
+          );
         }
         this.dropDnsQuery(query, "peer-expired");
       }
@@ -1401,21 +1664,26 @@ class BrokerState {
         helper_session_id: stream.helperSessionId,
         helper_stream_id: stream.helperStreamId,
         agent_session_id: stream.agentSessionId,
-        agent_stream_id: stream.agentStreamId
+        agent_stream_id: stream.agentStreamId,
       });
-      this.queueFrame("helper", stream.helperSessionId, {
-        typeId: FRAME_RST,
-        flags: 0,
-        streamId: stream.helperStreamId,
-        offset: 0,
-        payload: makeErrorPayload("stream expired")
-      }, this.helperControlLane());
+      this.queueFrame(
+        "helper",
+        stream.helperSessionId,
+        {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: stream.helperStreamId,
+          offset: 0,
+          payload: makeErrorPayload("stream expired"),
+        },
+        this.helperControlLane(),
+      );
       this.queueFrame("agent", stream.agentSessionId, {
         typeId: FRAME_RST,
         flags: 0,
         streamId: stream.agentStreamId,
         offset: 0,
-        payload: makeErrorPayload("stream expired")
+        payload: makeErrorPayload("stream expired"),
       });
       this.dropStream(stream);
     }
@@ -1427,15 +1695,20 @@ class BrokerState {
         helper_session_id: query.helperSessionId,
         helper_request_id: query.helperRequestId,
         agent_session_id: query.agentSessionId,
-        agent_request_id: query.agentRequestId
+        agent_request_id: query.agentRequestId,
       });
-      this.queueFrame("helper", query.helperSessionId, {
-        typeId: FRAME_DNS_FAIL,
-        flags: 0,
-        streamId: query.helperRequestId,
-        offset: 0,
-        payload: makeErrorPayload("dns query expired")
-      }, "pri");
+      this.queueFrame(
+        "helper",
+        query.helperSessionId,
+        {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: query.helperRequestId,
+          offset: 0,
+          payload: makeErrorPayload("dns query expired"),
+        },
+        "pri",
+      );
       this.dropDnsQuery(query, "query-expired");
     }
   }
@@ -1458,9 +1731,15 @@ class BrokerState {
           bulk_buffered_bytes: peer.dataBulkQueue.bufferedBytes,
           last_seen_age_ms: Math.max(0, nowMs() - peer.lastSeenMs),
           channel_open: {
-            ctl: Boolean(peer.channels.ctl && peer.channels.ctl.readyState === WebSocket.OPEN),
-            data: Boolean(peer.channels.data && peer.channels.data.readyState === WebSocket.OPEN)
-          }
+            ctl: Boolean(
+              peer.channels.ctl &&
+              peer.channels.ctl.readyState === WebSocket.OPEN,
+            ),
+            data: Boolean(
+              peer.channels.data &&
+              peer.channels.data.readyState === WebSocket.OPEN,
+            ),
+          },
         });
       }
     }
@@ -1475,25 +1754,27 @@ class BrokerState {
       base_uri: this.baseUri,
       log_paths: {
         runtime: RUNTIME_LOG_PATH,
-        events: EVENT_LOG_PATH
+        events: EVENT_LOG_PATH,
       },
       buffered_ctl_bytes: buffered.ctl,
       buffered_pri_bytes: buffered.pri,
       buffered_bulk_bytes: buffered.bulk,
       capabilities: brokerCapabilities(),
       metrics: this.metrics,
-      recent_event_count: this.recentEvents.length
+      recent_event_count: this.recentEvents.length,
     };
     if (DEBUG_STATS_ENABLED) {
       payload.peer_details = peers;
-      payload.stream_details = Array.from(this.streamsByAgent.values()).slice(0, 32).map((stream) => ({
-        helper_session_id: stream.helperSessionId,
-        helper_stream_id: stream.helperStreamId,
-        agent_session_id: stream.agentSessionId,
-        agent_stream_id: stream.agentStreamId,
-        age_ms: Math.max(0, nowMs() - stream.createdAtMs),
-        last_seen_age_ms: Math.max(0, nowMs() - stream.lastSeenMs)
-      }));
+      payload.stream_details = Array.from(this.streamsByAgent.values())
+        .slice(0, 32)
+        .map((stream) => ({
+          helper_session_id: stream.helperSessionId,
+          helper_stream_id: stream.helperStreamId,
+          agent_session_id: stream.agentSessionId,
+          agent_stream_id: stream.agentStreamId,
+          age_ms: Math.max(0, nowMs() - stream.createdAtMs),
+          last_seen_age_ms: Math.max(0, nowMs() - stream.lastSeenMs),
+        }));
       payload.recent_events = this.recentEvents.slice(-64);
     }
     return payload;
@@ -1510,54 +1791,60 @@ if (!DEBUG_STATS_ENABLED && loadedConfig.debug_stats_enabled) {
 RUNTIME_LOG_PATH = resolveLogPath(
   loadedConfig.log_path,
   process.env.TWOMAN_RUNTIME_LOG_PATH || process.env.TWOMAN_LOG_PATH,
-  "node-broker.log"
+  "node-broker.log",
 );
 EVENT_LOG_PATH = resolveLogPath(
   loadedConfig.event_log_path,
   process.env.TWOMAN_EVENT_LOG_PATH,
-  "node-broker-events.ndjson"
+  "node-broker-events.ndjson",
 );
 RUNTIME_LOG_MAX_BYTES = coerceInt(
   loadedConfig.log_max_bytes || process.env.TWOMAN_RUNTIME_LOG_MAX_BYTES,
-  DEFAULT_RUNTIME_LOG_MAX_BYTES
+  DEFAULT_RUNTIME_LOG_MAX_BYTES,
 );
 RUNTIME_LOG_BACKUP_COUNT = coerceInt(
   loadedConfig.log_backup_count || process.env.TWOMAN_RUNTIME_LOG_BACKUP_COUNT,
   DEFAULT_RUNTIME_LOG_BACKUP_COUNT,
-  0
+  0,
 );
 EVENT_LOG_MAX_BYTES = coerceInt(
   loadedConfig.event_log_max_bytes || process.env.TWOMAN_EVENT_LOG_MAX_BYTES,
-  DEFAULT_EVENT_LOG_MAX_BYTES
+  DEFAULT_EVENT_LOG_MAX_BYTES,
 );
 EVENT_LOG_BACKUP_COUNT = coerceInt(
-  loadedConfig.event_log_backup_count || process.env.TWOMAN_EVENT_LOG_BACKUP_COUNT,
+  loadedConfig.event_log_backup_count ||
+    process.env.TWOMAN_EVENT_LOG_BACKUP_COUNT,
   DEFAULT_EVENT_LOG_BACKUP_COUNT,
-  0
+  0,
 );
 RECENT_EVENT_LIMIT = coerceInt(
   loadedConfig.recent_event_limit || process.env.TWOMAN_RECENT_EVENT_LIMIT,
-  DEFAULT_RECENT_EVENT_LIMIT
+  DEFAULT_RECENT_EVENT_LIMIT,
 );
-BINARY_MEDIA_TYPE = String(
-  loadedConfig.binary_media_type || process.env.TWOMAN_BINARY_MEDIA_TYPE || DEFAULT_BINARY_MEDIA_TYPE
-).trim() || DEFAULT_BINARY_MEDIA_TYPE;
+BINARY_MEDIA_TYPE =
+  String(
+    loadedConfig.binary_media_type ||
+      process.env.TWOMAN_BINARY_MEDIA_TYPE ||
+      DEFAULT_BINARY_MEDIA_TYPE,
+  ).trim() || DEFAULT_BINARY_MEDIA_TYPE;
 ensureLogDir(RUNTIME_LOG_PATH);
 ensureLogDir(EVENT_LOG_PATH);
 const state = new BrokerState(loadedConfig);
 state.recordEvent("broker_loaded", {
   config_path: CONFIG_PATH,
   runtime_log_path: RUNTIME_LOG_PATH,
-  event_log_path: EVENT_LOG_PATH
+  event_log_path: EVENT_LOG_PATH,
 });
-runtimeLog(`broker loaded config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
+runtimeLog(
+  `broker loaded config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`,
+);
 
 function jsonResponse(res, statusCode, payload) {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
     "Content-Length": String(body.length),
-    "Cache-Control": "no-store"
+    "Cache-Control": "no-store",
   });
   res.end(body);
 }
@@ -1581,7 +1868,10 @@ function parseCookieHeader(value) {
 }
 
 function normalizeMediaType(value) {
-  return String(value || "").split(";", 1)[0].trim().toLowerCase();
+  return String(value || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
 }
 
 function validateBinaryMediaType(value) {
@@ -1602,7 +1892,7 @@ function parseLaneRoute(route) {
   }
   return {
     lane: parts[parts.length - 2],
-    direction: parts[parts.length - 1]
+    direction: parts[parts.length - 1],
   };
 }
 
@@ -1628,13 +1918,15 @@ function connectionHeaders(req) {
     token,
     role: String(cookies._cf_role || req.headers["x-cf-role"] || ""),
     peer: String(cookies._cf_lspa || req.headers["x-cf-lspa"] || ""),
-    session: String(cookies._wp_syncId || req.headers["x-wp-syncid"] || "")
+    session: String(cookies._wp_syncId || req.headers["x-wp-syncid"] || ""),
   };
 }
 
 function isObserverAuthorized(req) {
   const identity = connectionHeaders(req);
-  return state.auth("helper", identity.token) || state.auth("agent", identity.token);
+  return (
+    state.auth("helper", identity.token) || state.auth("agent", identity.token)
+  );
 }
 
 async function handleConnectProbe(req, res, url) {
@@ -1659,7 +1951,9 @@ async function handleConnectProbe(req, res, url) {
     };
     socket.once("connect", () => finish({ ok: true }));
     socket.once("timeout", () => finish({ ok: false, error: "timeout" }));
-    socket.once("error", (error) => finish({ ok: false, error: String(error.message || error) }));
+    socket.once("error", (error) =>
+      finish({ ok: false, error: String(error.message || error) }),
+    );
     socket.connect(port, host);
   });
   if (result.ok) {
@@ -1672,7 +1966,7 @@ async function handleConnectProbe(req, res, url) {
     port,
     ok: result.ok,
     error: result.error || "",
-    time_ms: Date.now() - started
+    time_ms: Date.now() - started,
   });
 }
 
@@ -1682,7 +1976,7 @@ function handleChunkStream(res) {
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     Connection: "keep-alive",
-    "Transfer-Encoding": "chunked"
+    "Transfer-Encoding": "chunked",
   });
   let count = 0;
   const timer = setInterval(() => {
@@ -1705,14 +1999,14 @@ async function handleUploadProbe(req, res) {
     events.push({
       offset_ms: Date.now() - started,
       chunk_bytes: chunk.length,
-      total_bytes: totalBytes
+      total_bytes: totalBytes,
     });
   }
   jsonResponse(res, 200, {
     ok: true,
     total_bytes: totalBytes,
     chunks: events.length,
-    events
+    events,
   });
 }
 
@@ -1722,7 +2016,7 @@ function processInboundFrames(role, sessionId, externalLane, decoder, chunk) {
     let logicalLane = externalLane;
     if (externalLane === LANE_DATA) {
       if (frame.typeId === FRAME_DATA) {
-        logicalLane = (frame.flags & FLAG_DATA_BULK) ? "bulk" : "pri";
+        logicalLane = frame.flags & FLAG_DATA_BULK ? "bulk" : "pri";
       } else if (DNS_FRAME_TYPES.has(frame.typeId)) {
         logicalLane = "pri";
       } else {
@@ -1748,26 +2042,39 @@ async function handleLaneDownStream(peer, lane, res) {
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     Connection: "keep-alive",
-    "Transfer-Encoding": "chunked"
+    "Transfer-Encoding": "chunked",
   });
   try {
     let tokenStr = "twoman-default-key";
-    if (peer.role === 'agent' && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-        tokenStr = loadedConfig.agent_tokens[0];
-    } else if (peer.role !== 'agent' && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-        tokenStr = loadedConfig.client_tokens[0];
+    if (
+      peer.role === "agent" &&
+      loadedConfig.agent_tokens &&
+      loadedConfig.agent_tokens.length > 0
+    ) {
+      tokenStr = loadedConfig.agent_tokens[0];
+    } else if (
+      peer.role !== "agent" &&
+      loadedConfig.client_tokens &&
+      loadedConfig.client_tokens.length > 0
+    ) {
+      tokenStr = loadedConfig.client_tokens[0];
     }
     const iv = crypto.randomBytes(16);
     const cipher = new TransportCipher(Buffer.from(tokenStr), iv);
-    
+
     if (!res.write(iv)) {
       await new Promise((resolve) => res.once("drain", resolve));
     }
 
-    while (!closed && !res.writableEnded && (Date.now() - started) < maxDurationMs) {
-      const payload = lane === LANE_CTL
-        ? await state.nextCtlPayload(peer, waitTimeoutMs)
-        : await state.nextDataPayload(peer, waitTimeoutMs);
+    while (
+      !closed &&
+      !res.writableEnded &&
+      Date.now() - started < maxDurationMs
+    ) {
+      const payload =
+        lane === LANE_CTL
+          ? await state.nextCtlPayload(peer, waitTimeoutMs)
+          : await state.nextDataPayload(peer, waitTimeoutMs);
       if (!payload || payload.length === 0) {
         continue;
       }
@@ -1829,11 +2136,20 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const parsedRoute = parseLaneRoute(route);
-  if (parsedRoute && (parsedRoute.lane === LANE_CTL || parsedRoute.lane === LANE_DATA) && (parsedRoute.direction === "up" || parsedRoute.direction === "down")) {
+  if (
+    parsedRoute &&
+    (parsedRoute.lane === LANE_CTL || parsedRoute.lane === LANE_DATA) &&
+    (parsedRoute.direction === "up" || parsedRoute.direction === "down")
+  ) {
     const lane = parsedRoute.lane;
     const direction = parsedRoute.direction;
     const headers = connectionHeaders(req);
-    if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
+    if (
+      !headers.role ||
+      !headers.peer ||
+      !headers.session ||
+      !state.auth(headers.role, headers.token)
+    ) {
       jsonResponse(res, 403, { error: "invalid role or token" });
       return;
     }
@@ -1850,27 +2166,41 @@ const server = http.createServer(async (req, res) => {
       let initCipher = null;
       let ivBuffer = Buffer.alloc(0);
       let tokenStr = "twoman-default-key";
-      if (headers.role === 'agent' && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-          tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== 'agent' && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-          tokenStr = loadedConfig.client_tokens[0];
+      if (
+        headers.role === "agent" &&
+        loadedConfig.agent_tokens &&
+        loadedConfig.agent_tokens.length > 0
+      ) {
+        tokenStr = loadedConfig.agent_tokens[0];
+      } else if (
+        headers.role !== "agent" &&
+        loadedConfig.client_tokens &&
+        loadedConfig.client_tokens.length > 0
+      ) {
+        tokenStr = loadedConfig.client_tokens[0];
       }
 
       for await (let chunk of req) {
         if (!initCipher) {
-            const needed = 16 - ivBuffer.length;
-            if (chunk.length >= needed) {
-                ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
-                chunk = chunk.subarray(needed);
-                initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer);
-            } else {
-                ivBuffer = Buffer.concat([ivBuffer, chunk]);
-                continue;
-            }
+          const needed = 16 - ivBuffer.length;
+          if (chunk.length >= needed) {
+            ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
+            chunk = chunk.subarray(needed);
+            initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer);
+          } else {
+            ivBuffer = Buffer.concat([ivBuffer, chunk]);
+            continue;
+          }
         }
         if (chunk.length > 0) {
-            const ptChunk = initCipher.process(chunk);
-            frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
+          const ptChunk = initCipher.process(chunk);
+          frameCount += processInboundFrames(
+            headers.role,
+            headers.session,
+            lane,
+            decoder,
+            ptChunk,
+          );
         }
       }
       jsonResponse(res, 200, { ok: true, frames: frameCount });
@@ -1894,15 +2224,24 @@ const server = http.createServer(async (req, res) => {
         await handleLaneDownStream(peer, lane, res);
         return;
       }
-      const payload = lane === LANE_CTL
-        ? await state.nextCtlPayload(peer, roleDownWaitMs.ctl)
-        : await state.nextDataPayload(peer, roleDownWaitMs.data);
-        
+      const payload =
+        lane === LANE_CTL
+          ? await state.nextCtlPayload(peer, roleDownWaitMs.ctl)
+          : await state.nextDataPayload(peer, roleDownWaitMs.data);
+
       let tokenStr = "twoman-default-key";
-      if (headers.role === 'agent' && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-          tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== 'agent' && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-          tokenStr = loadedConfig.client_tokens[0];
+      if (
+        headers.role === "agent" &&
+        loadedConfig.agent_tokens &&
+        loadedConfig.agent_tokens.length > 0
+      ) {
+        tokenStr = loadedConfig.agent_tokens[0];
+      } else if (
+        headers.role !== "agent" &&
+        loadedConfig.client_tokens &&
+        loadedConfig.client_tokens.length > 0
+      ) {
+        tokenStr = loadedConfig.client_tokens[0];
       }
       const iv = crypto.randomBytes(16);
       const cipher = new TransportCipher(Buffer.from(tokenStr), iv);
@@ -1911,7 +2250,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, {
         "Content-Type": BINARY_MEDIA_TYPE,
         "Content-Length": String(encPayload.length),
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
       });
       res.end(encPayload);
       return;
@@ -1946,7 +2285,12 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
   const headers = connectionHeaders(req);
-  if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
+  if (
+    !headers.role ||
+    !headers.peer ||
+    !headers.session ||
+    !state.auth(headers.role, headers.token)
+  ) {
     socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
@@ -1967,29 +2311,43 @@ echoWss.on("connection", (ws) => {
 wss.on("connection", (ws) => {
   const headers = ws._twomanHeaders;
   const lane = ws._twomanLane;
-  const peer = state.bindChannel(headers.role, headers.peer, headers.session, lane, ws);
+  const peer = state.bindChannel(
+    headers.role,
+    headers.peer,
+    headers.session,
+    lane,
+    ws,
+  );
   const decoder = new FrameDecoder();
-  
+
   let tokenStr = "twoman-default-key";
-  if (headers.role === 'agent' && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-      tokenStr = loadedConfig.agent_tokens[0];
-  } else if (headers.role !== 'agent' && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-      tokenStr = loadedConfig.client_tokens[0];
+  if (
+    headers.role === "agent" &&
+    loadedConfig.agent_tokens &&
+    loadedConfig.agent_tokens.length > 0
+  ) {
+    tokenStr = loadedConfig.agent_tokens[0];
+  } else if (
+    headers.role !== "agent" &&
+    loadedConfig.client_tokens &&
+    loadedConfig.client_tokens.length > 0
+  ) {
+    tokenStr = loadedConfig.client_tokens[0];
   }
   const sendIv = crypto.randomBytes(16);
   const sendCipher = new TransportCipher(Buffer.from(tokenStr), sendIv);
   let recvCipher = null;
   let recvIvBuffer = Buffer.alloc(0);
-  
+
   const originalSend = ws.send.bind(ws);
   let firstMsg = true;
   ws.send = (data, options, cb) => {
-      const ctPayload = sendCipher.process(data);
-      if (firstMsg) {
-          firstMsg = false;
-          return originalSend(Buffer.concat([sendIv, ctPayload]), options, cb);
-      }
-      return originalSend(ctPayload, options, cb);
+    const ctPayload = sendCipher.process(data);
+    if (firstMsg) {
+      firstMsg = false;
+      return originalSend(Buffer.concat([sendIv, ctPayload]), options, cb);
+    }
+    return originalSend(ctPayload, options, cb);
   };
 
   ws.on("pong", () => {
@@ -1997,47 +2355,59 @@ wss.on("connection", (ws) => {
   });
   ws.on("message", (message) => {
     let data = Buffer.isBuffer(message) ? message : Buffer.from(message);
-    
+
     if (!recvCipher) {
-        const needed = 16 - recvIvBuffer.length;
-        if (data.length >= needed) {
-            recvIvBuffer = Buffer.concat([recvIvBuffer, data.subarray(0, needed)]);
-            data = data.subarray(needed);
-            recvCipher = new TransportCipher(Buffer.from(tokenStr), recvIvBuffer);
-        } else {
-            recvIvBuffer = Buffer.concat([recvIvBuffer, data]);
-            return;
-        }
+      const needed = 16 - recvIvBuffer.length;
+      if (data.length >= needed) {
+        recvIvBuffer = Buffer.concat([recvIvBuffer, data.subarray(0, needed)]);
+        data = data.subarray(needed);
+        recvCipher = new TransportCipher(Buffer.from(tokenStr), recvIvBuffer);
+      } else {
+        recvIvBuffer = Buffer.concat([recvIvBuffer, data]);
+        return;
+      }
     }
-    
+
     if (data.length > 0) {
-        const ptData = recvCipher.process(data);
-        peer.touch();
-        state.metrics.ws_messages_in[lane] += 1;
-        state.metrics.ws_bytes_in[lane] += ptData.length;
-        processInboundFrames(headers.role, headers.session, lane, decoder, ptData);
+      const ptData = recvCipher.process(data);
+      peer.touch();
+      state.metrics.ws_messages_in[lane] += 1;
+      state.metrics.ws_bytes_in[lane] += ptData.length;
+      processInboundFrames(
+        headers.role,
+        headers.session,
+        lane,
+        decoder,
+        ptData,
+      );
     }
   });
   ws.on("close", () => {
     state.unbindChannel(ws._twomanPeerKey, lane, ws);
   });
   ws.on("error", (error) => {
-    trace(`ws error role=${headers.role} session=${headers.session} lane=${lane} error=${error}`);
-    runtimeLog(`ws error role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane} error=${error}`);
+    trace(
+      `ws error role=${headers.role} session=${headers.session} lane=${lane} error=${error}`,
+    );
+    runtimeLog(
+      `ws error role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane} error=${error}`,
+    );
     state.recordEvent("ws_error", {
       role: headers.role,
       peer_label: headers.peer,
       peer_session_id: headers.session,
       lane,
-      error: String(error && error.message ? error.message : error)
+      error: String(error && error.message ? error.message : error),
     });
   });
-  trace(`channel open role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane}`);
+  trace(
+    `channel open role=${headers.role} label=${headers.peer} session=${headers.session} lane=${lane}`,
+  );
   state.recordEvent("channel_open", {
     role: headers.role,
     peer_label: headers.peer,
     peer_session_id: headers.session,
-    lane
+    lane,
   });
 });
 
@@ -2058,30 +2428,40 @@ setInterval(() => {
 
 server.listen(process.env.PORT || 3000, () => {
   trace(`listening pid=${process.pid} base_uri=${state.baseUri || "/"}`);
-  runtimeLog(`listening pid=${process.pid} base_uri=${state.baseUri || "/"} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
+  runtimeLog(
+    `listening pid=${process.pid} base_uri=${state.baseUri || "/"} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`,
+  );
   state.recordEvent("broker_started", {
     pid: process.pid,
     base_uri: state.baseUri || "/",
     runtime_log_path: RUNTIME_LOG_PATH,
-    event_log_path: EVENT_LOG_PATH
+    event_log_path: EVENT_LOG_PATH,
   });
 });
 
 process.on("uncaughtException", (error) => {
-  trace(`uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`);
-  runtimeLog(`uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`);
+  trace(
+    `uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`,
+  );
+  runtimeLog(
+    `uncaughtException pid=${process.pid} error=${error && error.stack ? error.stack : error}`,
+  );
   state.recordEvent("uncaught_exception", {
     pid: process.pid,
-    error: String(error && error.stack ? error.stack : error)
+    error: String(error && error.stack ? error.stack : error),
   });
 });
 
 process.on("unhandledRejection", (reason) => {
-  trace(`unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`);
-  runtimeLog(`unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`);
+  trace(
+    `unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`,
+  );
+  runtimeLog(
+    `unhandledRejection pid=${process.pid} reason=${reason && reason.stack ? reason.stack : reason}`,
+  );
   state.recordEvent("unhandled_rejection", {
     pid: process.pid,
-    reason: String(reason && reason.stack ? reason.stack : reason)
+    reason: String(reason && reason.stack ? reason.stack : reason),
   });
 });
 
