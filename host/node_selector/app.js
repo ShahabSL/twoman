@@ -3657,35 +3657,17 @@ var TransportCipher = class {
       keyBuffer = Buffer.from("twoman-default-key");
     }
     this.key = crypto.createHash("sha256").update(keyBuffer).digest();
-    this.iv = ivBuffer.length < 16 ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)]) : ivBuffer.subarray(0, 16);
-    this.blockIndex = 0n;
-    this.keystreamBuffer = Buffer.alloc(0);
-    this.streamOffset = 0;
-  }
-  _generateBlock() {
-    const indexBuf = Buffer.alloc(8);
-    indexBuf.writeBigUInt64BE(this.blockIndex, 0);
-    this.blockIndex += 1n;
-    const counterBytes = Buffer.concat([this.iv, indexBuf]);
-    return crypto.createHmac("sha256", this.key).update(counterBytes).digest();
+
+    this.iv =
+      ivBuffer.length < 16
+        ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)])
+        : ivBuffer.subarray(0, 16);
+
+    this._cipher = crypto.createCipheriv("aes-256-ctr", this.key, this.iv);
   }
   process(data) {
     if (!data || data.length === 0) return Buffer.alloc(0);
-    const output = Buffer.alloc(data.length);
-    let processed = 0;
-    while (processed < data.length) {
-      if (this.keystreamBuffer.length === 0) {
-        this.keystreamBuffer = this._generateBlock();
-      }
-      const chunkSize = Math.min(data.length - processed, this.keystreamBuffer.length);
-      for (let i = 0; i < chunkSize; i++) {
-        output[processed + i] = data[processed + i] ^ this.keystreamBuffer[i];
-      }
-      this.keystreamBuffer = this.keystreamBuffer.subarray(chunkSize);
-      processed += chunkSize;
-    }
-    this.streamOffset += data.length;
-    return output;
+    return this._cipher.update(data);
   }
 };
 var ROOT_DIR = path.resolve(__dirname, "..", "..");
