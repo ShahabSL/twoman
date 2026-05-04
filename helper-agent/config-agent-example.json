@@ -1,0 +1,27 @@
+{
+  "broker_base_url": "https://example.com/api/explore",
+  "agent_token": "38fae354-4fa6-4137-9b64-835ef37e8134",
+  "auth_mode": "bearer",
+
+  "binary_media_type": "image/webp",
+  "route_template": "/{lane}/{direction}",
+  "ws_route_template": "/{lane}",
+  "health_template": "/health",
+
+  "http_timeout_seconds": 30,
+  "heartbeat_interval_seconds": 15,
+  "down_read_timeout_seconds": 10,
+  "down_stream_max_session_seconds": 60,
+  "interval_jitter_ratio": 0.2,
+  "backoff_initial_delay_seconds": 0.1,
+  "backoff_max_delay_seconds": 5,
+  "flush_delay_seconds": 0.006,
+  "max_batch_bytes": 262144,
+
+  "http2_enabled": { "ctl": false, "data": false },
+
+  "upstream_proxy_url": "socks5://127.0.0.1:2080",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "legacy_custom_headers_enabled": false,
+  "identity_cookie_names": {}
+}

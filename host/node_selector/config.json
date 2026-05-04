@@ -1,0 +1,27 @@
+{
+  "base_uri": "/api/explore",
+  "client_tokens": ["a228cf69-4824-4073-9624-c2d2f19fcd37"],
+  "agent_tokens": ["38fae354-4fa6-4137-9b64-835ef37e8134"],
+  "peer_ttl_seconds": 90,
+  "stream_ttl_seconds": 300,
+  "max_lane_bytes": 16777216,
+  "max_streams_per_peer_session": 1024,
+  "max_open_rate_per_peer_session": 120,
+  "open_rate_window_seconds": 10,
+  "max_peer_buffered_bytes": 33554432,
+  "flush_backpressure_bytes": 524288,
+  "flush_retry_delay_ms": 5,
+  "down_wait_ms": { "ctl": 75, "data": 75 },
+  "helper_down_combined_data_lane": true,
+  "agent_down_combined_data_lane": true,
+  "streaming_data_down_helper": true,
+  "streaming_data_down_agent": true,
+  "websocket_public_enabled": false,
+  "lane_profiles": {
+    "ctl": { "max_bytes": 4096, "max_frames": 8, "hold_ms": 1, "pad_min": 512 },
+    "pri": { "max_bytes": 32768, "max_frames": 16, "hold_ms": 2, "pad_min": 512 },
+    "bulk": { "max_bytes": 262144, "max_frames": 64, "hold_ms": 4, "pad_min": 0 }
+  },
+  "trace_enabled": 0,
+  "debug_stats_enabled": 0
+}
