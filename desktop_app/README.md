@@ -18,15 +18,16 @@ What it does:
 
 Important scope:
 - this app is the user-facing desktop shell
-- the Twoman tunnel logic still lives in the Python helper and SOCKS gateway
-- release builds bundle those runtimes as sidecars
+- the Twoman helper dataplane is the Go `helper-agent` runtime
+- the desktop SOCKS gateway and Windows TUN runtime remain separate sidecars
 
 ## Running from Source
 
 Requirements:
 - Node.js 22+
 - Rust toolchain
-- Python 3 for source-mode helper execution
+- Go toolchain for source-mode helper execution
+- Python 3 for the desktop SOCKS gateway sidecar
 
 Install dependencies:
 
@@ -154,7 +155,8 @@ cd desktop_app
 npm run tauri build
 ```
 
-The app looks for bundled sidecars first. If no bundled sidecar exists, development builds fall back to the repo’s Python source runtime.
+The app looks for bundled sidecars first. If no bundled helper sidecar exists,
+development builds fall back to `go run ./helper-agent`.
 
 ## Validation
 

@@ -19,11 +19,10 @@ use crate::{
     },
     storage::{
         helper_config_path, helper_listen_state_path, helper_log_path, helper_pid_path,
-        load_profiles, load_settings, load_shares, normalize_mode_for_platform,
-        normalize_settings, read_log_tail, save_profiles, save_settings, save_shares,
-        share_config_path, share_log_path, share_pid_path, tunnel_config_path,
-        tunnel_log_path, tunnel_pid_path, tunnel_work_dir, validate_profile, validate_share,
-        AppPaths,
+        load_profiles, load_settings, load_shares, normalize_mode_for_platform, normalize_settings,
+        read_log_tail, save_profiles, save_settings, save_shares, share_config_path,
+        share_log_path, share_pid_path, tunnel_config_path, tunnel_log_path, tunnel_pid_path,
+        tunnel_work_dir, validate_profile, validate_share, AppPaths,
     },
     system_proxy::SystemProxyManager,
 };
@@ -679,9 +678,12 @@ impl DesktopRuntime {
             &log_path,
         )?;
 
-        let Some(listen_state) =
-            wait_for_helper_listen_state(&mut child, &log_path, &listen_state_path, PORT_WAIT_TIMEOUT)
-        else {
+        let Some(listen_state) = wait_for_helper_listen_state(
+            &mut child,
+            &log_path,
+            &listen_state_path,
+            PORT_WAIT_TIMEOUT,
+        ) else {
             terminate_child(&mut child);
             return Err(format!(
                 "helper failed to start in {} mode\n{}",
@@ -693,7 +695,8 @@ impl DesktopRuntime {
                 read_log_tail(&log_path, LOG_TAIL_LINES)
             ));
         };
-        if listen_state.http_port != profile.http_port || listen_state.socks_port != profile.socks_port
+        if listen_state.http_port != profile.http_port
+            || listen_state.socks_port != profile.socks_port
         {
             terminate_child(&mut child);
             terminate_pid_file(&pid_path);
@@ -1031,8 +1034,28 @@ fn runtime_program_from_source(kind: &str, config_path: &Path) -> Result<Program
         .join("../..")
         .canonicalize()
         .map_err(|error| format!("failed to resolve repo root: {error}"))?;
+    if kind == "helper" {
+        let helper_agent_dir = repo_root.join("helper-agent");
+        if !helper_agent_dir.join("go.mod").exists() {
+            return Err("Go helper source is missing from helper-agent".into());
+        }
+        if !go_tool_available() {
+            return Err("Go is required to run the Twoman helper from source".into());
+        }
+        return Ok(ProgramSpec {
+            executable: PathBuf::from("go"),
+            args: vec![
+                "run".into(),
+                ".".into(),
+                "--config".into(),
+                config_path.display().to_string(),
+                "--mode".into(),
+                "helper".into(),
+            ],
+            working_dir: Some(helper_agent_dir),
+        });
+    }
     let (script_path, default_python) = match kind {
-        "helper" => (repo_root.join("local_client/helper.py"), python_launcher()),
         "gateway" => (
             repo_root.join("desktop_client/socks_gateway.py"),
             python_launcher(),
@@ -1178,6 +1201,16 @@ fn python_launcher() -> PathBuf {
         return PathBuf::from("py");
     }
     PathBuf::from("python3")
+}
+
+fn go_tool_available() -> bool {
+    Command::new("go")
+        .arg("version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn spawn_runtime_command(program: ProgramSpec, log_path: &Path) -> Result<Child, String> {

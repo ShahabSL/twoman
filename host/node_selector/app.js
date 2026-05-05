@@ -3651,13 +3651,21 @@ var net = require("net");
 var crypto = require("crypto");
 var path = require("path");
 var { WebSocketServer, WebSocket } = require_ws();
+var CIPHER_SUITE_HMAC_SHA256_CTR = "hmac-sha256-ctr-v1";
+var CIPHER_SUITE_AES_256_CTR = "aes-256-ctr-v2";
+var SUPPORTED_CIPHER_SUITES = /* @__PURE__ */ new Set([CIPHER_SUITE_HMAC_SHA256_CTR, CIPHER_SUITE_AES_256_CTR]);
 var TransportCipher = class {
-  constructor(keyBuffer, ivBuffer) {
+  constructor(keyBuffer, ivBuffer, suite = CIPHER_SUITE_HMAC_SHA256_CTR) {
     if (!keyBuffer || keyBuffer.length === 0) {
       keyBuffer = Buffer.from("twoman-default-key");
     }
+    this.suite = SUPPORTED_CIPHER_SUITES.has(suite) ? suite : CIPHER_SUITE_HMAC_SHA256_CTR;
     this.key = crypto.createHash("sha256").update(keyBuffer).digest();
     this.iv = ivBuffer.length < 16 ? Buffer.concat([ivBuffer, Buffer.alloc(16 - ivBuffer.length)]) : ivBuffer.subarray(0, 16);
+    if (this.suite === CIPHER_SUITE_AES_256_CTR) {
+      this.aesCipher = crypto.createCipheriv("aes-256-ctr", this.key, this.iv);
+      return;
+    }
     this.blockIndex = 0n;
     this.keystreamBuffer = Buffer.alloc(0);
     this.streamOffset = 0;
@@ -3671,6 +3679,9 @@ var TransportCipher = class {
   }
   process(data) {
     if (!data || data.length === 0) return Buffer.alloc(0);
+    if (this.aesCipher) {
+      return this.aesCipher.update(data);
+    }
     const output = Buffer.alloc(data.length);
     let processed = 0;
     while (processed < data.length) {
@@ -3699,6 +3710,8 @@ var DEFAULT_EVENT_LOG_MAX_BYTES = 10 * 1024 * 1024;
 var DEFAULT_EVENT_LOG_BACKUP_COUNT = 5;
 var DEFAULT_RECENT_EVENT_LIMIT = 200;
 var DEFAULT_BINARY_MEDIA_TYPE = "image/webp";
+var DEFAULT_MAX_FRAME_PAYLOAD_BYTES = 2 * 1024 * 1024;
+var DEFAULT_UPLOAD_PROBE_EVENT_LIMIT = 4096;
 var RUNTIME_LOG_PATH = process.env.TWOMAN_RUNTIME_LOG_PATH || "";
 var EVENT_LOG_PATH = process.env.TWOMAN_EVENT_LOG_PATH || "";
 var RUNTIME_LOG_MAX_BYTES = DEFAULT_RUNTIME_LOG_MAX_BYTES;
@@ -3739,6 +3752,11 @@ function brokerCapabilities() {
   const helperDownCombinedDataLane = state ? state.helperDownCombinedDataLane : false;
   const agentDownCombinedDataLane = state ? state.agentDownCombinedDataLane : false;
   const websocketPublicEnabled = state ? state.websocketPublicEnabled : false;
+  const maxFramePayloadBytes = state ? state.maxFramePayloadBytes : DEFAULT_MAX_FRAME_PAYLOAD_BYTES;
+  const helperDataUpWorkers = state ? state.helperDataUpWorkers : 8;
+  const agentDataUpWorkers = state ? state.agentDataUpWorkers : 8;
+  const helperDataUploadProfile = state ? state.helperDataUploadProfile : { maxBatchBytes: 524288, flushDelaySeconds: 6e-3 };
+  const agentDataUploadProfile = state ? state.agentDataUploadProfile : { maxBatchBytes: 524288, flushDelaySeconds: 6e-3 };
   const supportedProfiles = [PROFILE_MANAGED_HOST_HTTP];
   if (websocketPublicEnabled) {
     supportedProfiles.push(PROFILE_MANAGED_HOST_WS);
@@ -3748,26 +3766,38 @@ function brokerCapabilities() {
     backend_family: "node_selector",
     recommended_profile: PROFILE_MANAGED_HOST_HTTP,
     supported_profiles: supportedProfiles,
+    cipher_suites: [CIPHER_SUITE_AES_256_CTR, CIPHER_SUITE_HMAC_SHA256_CTR],
+    max_frame_payload_bytes: maxFramePayloadBytes,
     profiles: {
       [PROFILE_MANAGED_HOST_HTTP]: {
         transport: "http",
         helper: {
           http2_enabled: { ctl: true, data: false },
-          down_lanes: helperDownCombinedDataLane ? ["data"] : [],
-          down_parallelism: { data: 2 },
+          down_lanes: helperDownCombinedDataLane ? ["data"] : ["ctl", "data"],
+          down_parallelism: helperDownCombinedDataLane ? { data: 2 } : { ctl: 1, data: 1 },
+          up_workers: { data: helperDataUpWorkers },
           upload_profiles: {
-            data: { max_batch_bytes: 65536, flush_delay_seconds: 4e-3 }
+            data: {
+              max_batch_bytes: helperDataUploadProfile.maxBatchBytes,
+              flush_delay_seconds: helperDataUploadProfile.flushDelaySeconds
+            }
           },
           idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
-          streaming_up_lanes: []
+          streaming_up_lanes: [],
+          ...helperDownCombinedDataLane ? { stream_control_lane: "pri" } : {}
         },
         agent: {
           http2_enabled: { ctl: false, data: false },
-          down_lanes: agentDownCombinedDataLane ? ["data"] : [],
+          down_lanes: agentDownCombinedDataLane ? ["data"] : ["ctl", "data"],
+          down_parallelism: agentDownCombinedDataLane ? { data: 2 } : { ctl: 1, data: 1 },
+          up_workers: { data: agentDataUpWorkers },
           proxy_keepalive_connections: 2,
           proxy_keepalive_expiry_seconds: 15,
           upload_profiles: {
-            data: { max_batch_bytes: 131072, flush_delay_seconds: 6e-3 }
+            data: {
+              max_batch_bytes: agentDataUploadProfile.maxBatchBytes,
+              flush_delay_seconds: agentDataUploadProfile.flushDelaySeconds
+            }
           },
           down_read_timeout_seconds: agentDownReadTimeoutSeconds,
           idle_repoll_delay_seconds: { ctl: 0.05, data: 0.1 },
@@ -3949,8 +3979,9 @@ function encodeFrame(frame) {
   return Buffer.concat([header, payload]);
 }
 var FrameDecoder = class {
-  constructor() {
+  constructor(maxFramePayloadBytes = DEFAULT_MAX_FRAME_PAYLOAD_BYTES) {
     this.buffer = Buffer.alloc(0);
+    this.maxFramePayloadBytes = Math.max(1, Number(maxFramePayloadBytes || DEFAULT_MAX_FRAME_PAYLOAD_BYTES));
   }
   feed(chunk) {
     if (!chunk || chunk.length === 0) {
@@ -3964,6 +3995,11 @@ var FrameDecoder = class {
       const streamId = this.buffer.readUInt32BE(4);
       const offset = Number(this.buffer.readBigUInt64BE(8));
       const length = this.buffer.readUInt32BE(16);
+      if (length > this.maxFramePayloadBytes) {
+        const error = new Error(`frame payload too large: ${length} > ${this.maxFramePayloadBytes}`);
+        error.statusCode = 413;
+        throw error;
+      }
       const total = FRAME_HEADER_SIZE + length;
       if (this.buffer.length < total) {
         break;
@@ -3978,16 +4014,40 @@ var FrameDecoder = class {
 var FrameQueue = class {
   constructor() {
     this.items = [];
+    this.head = 0;
     this.bufferedBytes = 0;
   }
   push(payload) {
     this.items.push(payload);
     this.bufferedBytes += payload.length;
   }
+  unshift(payload) {
+    if (!payload) {
+      return;
+    }
+    if (this.head > 0) {
+      this.head -= 1;
+      this.items[this.head] = payload;
+    } else {
+      this.items.unshift(payload);
+    }
+    this.bufferedBytes += payload.length;
+  }
   shift() {
-    const payload = this.items.shift() || null;
+    if (this.head >= this.items.length) {
+      this.items = [];
+      this.head = 0;
+      return null;
+    }
+    const payload = this.items[this.head] || null;
+    this.items[this.head] = null;
+    this.head += 1;
     if (payload) {
       this.bufferedBytes = Math.max(0, this.bufferedBytes - payload.length);
+    }
+    if (this.head > 1024 && this.head * 2 >= this.items.length) {
+      this.items = this.items.slice(this.head);
+      this.head = 0;
     }
     return payload;
   }
@@ -4090,6 +4150,14 @@ var BrokerState = class {
     this.maxPeerBufferedBytes = Number(
       config.max_peer_buffered_bytes || Math.min(this.maxLaneBytes * 2, 32 * 1024 * 1024)
     );
+    this.maxFramePayloadBytes = Math.max(
+      1,
+      Number(config.max_frame_payload_bytes || process.env.TWOMAN_MAX_FRAME_PAYLOAD_BYTES || DEFAULT_MAX_FRAME_PAYLOAD_BYTES)
+    );
+    this.uploadProbeEventLimit = Math.max(
+      0,
+      Number(config.upload_probe_event_limit || process.env.TWOMAN_UPLOAD_PROBE_EVENT_LIMIT || DEFAULT_UPLOAD_PROBE_EVENT_LIMIT)
+    );
     this.maxStreamsPerPeerSession = Math.max(1, Number(config.max_streams_per_peer_session || 256));
     this.maxOpenRatePerPeerSession = Math.max(1, Number(config.max_open_rate_per_peer_session || 120));
     this.openRateWindowMs = Math.max(1e3, Number(config.open_rate_window_seconds || 10) * 1e3);
@@ -4099,12 +4167,25 @@ var BrokerState = class {
     this.downWaitMsByRole = this.normalizeRoleDownWaitMs(config);
     this.helperDownCombinedDataLane = Boolean(config.helper_down_combined_data_lane);
     this.agentDownCombinedDataLane = Boolean(config.agent_down_combined_data_lane);
+    this.helperDataUpWorkers = coerceInt(config.helper_data_up_workers, 8);
+    this.agentDataUpWorkers = coerceInt(config.agent_data_up_workers, 8);
+    this.helperDataUploadProfile = {
+      maxBatchBytes: coerceInt(config.helper_data_upload_max_batch_bytes, 524288),
+      flushDelaySeconds: Math.max(0, Number(config.helper_data_upload_flush_delay_seconds ?? 6e-3))
+    };
+    this.agentDataUploadProfile = {
+      maxBatchBytes: coerceInt(config.agent_data_upload_max_batch_bytes, 524288),
+      flushDelaySeconds: Math.max(0, Number(config.agent_data_upload_flush_delay_seconds ?? 6e-3))
+    };
     this.websocketPublicEnabled = Boolean(config.websocket_public_enabled);
     this.streamingCtlDownHelper = Boolean(config.streaming_ctl_down_helper);
     this.streamingDataDownHelper = Boolean(config.streaming_data_down_helper);
     this.streamingCtlDownAgent = Boolean(config.streaming_ctl_down_agent);
     this.streamingDataDownAgent = Boolean(config.streaming_data_down_agent);
     this.laneProfiles = normalizeLaneProfiles(config);
+    this.preferredAgentPeerLabel = String(
+      config.preferred_agent_peer_label || process.env.TWOMAN_PREFERRED_AGENT_PEER_LABEL || "agent-main"
+    ).trim();
     this.peers = /* @__PURE__ */ new Map();
     this.streamsByHelper = /* @__PURE__ */ new Map();
     this.streamsByAgent = /* @__PURE__ */ new Map();
@@ -4215,6 +4296,11 @@ var BrokerState = class {
     const key = this.peerKey(role, peerSessionId);
     let peer = this.peers.get(key);
     if (!peer) {
+      for (const existingPeer of Array.from(this.peers.values())) {
+        if (existingPeer.role === role && existingPeer.peerLabel === peerLabel && existingPeer.peerSessionId !== peerSessionId) {
+          this.dropPeer(existingPeer, "peer-replaced");
+        }
+      }
       peer = new PeerState(role, peerLabel, peerSessionId);
       this.peers.set(key, peer);
       this.metrics.peer_connects += 1;
@@ -4228,10 +4314,99 @@ var BrokerState = class {
     peer.touch();
     peer.peerLabel = peerLabel;
     if (role === "agent") {
-      this.agentSessionId = peerSessionId;
-      this.agentPeerLabel = peerLabel;
+      this.selectAgentPeer();
     }
     return peer;
+  }
+  dropPeer(peer, reason) {
+    const staleStreams = [];
+    for (const stream of this.streamsByAgent.values()) {
+      if (stream.helperSessionId === peer.peerSessionId || stream.agentSessionId === peer.peerSessionId) {
+        staleStreams.push(stream);
+      }
+    }
+    for (const stream of staleStreams) {
+      this.recordEvent("cleanup_peer_expired", {
+        role: peer.role,
+        peer_label: peer.peerLabel,
+        peer_session_id: peer.peerSessionId,
+        helper_session_id: stream.helperSessionId,
+        helper_stream_id: stream.helperStreamId,
+        agent_session_id: stream.agentSessionId,
+        agent_stream_id: stream.agentStreamId,
+        reason
+      });
+      if (peer.role === "helper" && stream.agentSessionId) {
+        this.queueFrame("agent", stream.agentSessionId, {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: stream.agentStreamId,
+          offset: 0,
+          payload: makeErrorPayload(reason || "peer expired")
+        });
+      }
+      if (peer.role === "agent" && stream.helperSessionId) {
+        this.queueFrame("helper", stream.helperSessionId, {
+          typeId: FRAME_RST,
+          flags: 0,
+          streamId: stream.helperStreamId,
+          offset: 0,
+          payload: makeErrorPayload(reason || "peer expired")
+        }, this.helperControlLane());
+      }
+      this.dropStream(stream, reason);
+    }
+    const staleDnsQueries = [];
+    for (const query of this.dnsQueriesByAgent.values()) {
+      if (query.helperSessionId === peer.peerSessionId || query.agentSessionId === peer.peerSessionId) {
+        staleDnsQueries.push(query);
+      }
+    }
+    for (const query of staleDnsQueries) {
+      if (peer.role === "agent") {
+        this.queueFrame("helper", query.helperSessionId, {
+          typeId: FRAME_DNS_FAIL,
+          flags: 0,
+          streamId: query.helperRequestId,
+          offset: 0,
+          payload: makeErrorPayload(reason || "peer expired")
+        }, "pri");
+      }
+      this.dropDnsQuery(query, reason || "peer-expired");
+    }
+    this.peers.delete(this.peerKey(peer.role, peer.peerSessionId));
+    if (peer.role === "agent" && this.agentSessionId === peer.peerSessionId) {
+      this.selectAgentPeer();
+    }
+  }
+  selectAgentPeer() {
+    let fallbackPeer = null;
+    const cutoffMs = nowMs() - this.peerTtlMs;
+    for (const peer of this.peers.values()) {
+      if (peer.role !== "agent" || peer.lastSeenMs < cutoffMs) {
+        continue;
+      }
+      if (this.preferredAgentPeerLabel && peer.peerLabel === this.preferredAgentPeerLabel) {
+        this.agentSessionId = peer.peerSessionId;
+        this.agentPeerLabel = peer.peerLabel;
+        return peer;
+      }
+      if (!fallbackPeer || peer.lastSeenMs > fallbackPeer.lastSeenMs) {
+        fallbackPeer = peer;
+      }
+    }
+    if (fallbackPeer) {
+      this.agentSessionId = fallbackPeer.peerSessionId;
+      this.agentPeerLabel = fallbackPeer.peerLabel;
+      return fallbackPeer;
+    }
+    this.agentSessionId = "";
+    this.agentPeerLabel = "";
+    return null;
+  }
+  selectAgentSessionId() {
+    const peer = this.selectAgentPeer();
+    return peer ? peer.peerSessionId : "";
   }
   allocateAgentDnsRequestId() {
     let requestId = Number(this.nextAgentDnsRequestId) >>> 0;
@@ -4287,7 +4462,7 @@ var BrokerState = class {
       return false;
     }
     const encoded = encodeFrame(frame);
-    if (this.maxPeerBufferedBytes && peer.bufferedBytesTotal() >= this.maxPeerBufferedBytes) {
+    if (this.maxPeerBufferedBytes && peer.bufferedBytesTotal() + encoded.length > this.maxPeerBufferedBytes) {
       trace(`drop frame type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=peer-buffer-full`);
       this.recordEvent("queue_drop", {
         reason: "peer-buffer-full",
@@ -4301,7 +4476,7 @@ var BrokerState = class {
     if (frame.typeId === FRAME_DATA || queueLane === "pri" || queueLane === "bulk") {
       const dataLane = queueLane || (frame.flags & FLAG_DATA_BULK ? "bulk" : "pri");
       const targetQueue = dataLane === "bulk" ? peer.dataBulkQueue : peer.dataPriQueue;
-      if (targetQueue.bufferedBytes >= this.maxLaneBytes) {
+      if (targetQueue.bufferedBytes + encoded.length > this.maxLaneBytes) {
         trace(`drop data stream=${frame.streamId} role=${role} session=${peerSessionId} reason=data-queue-full`);
         this.recordEvent("queue_drop", {
           reason: "data-queue-full",
@@ -4338,7 +4513,7 @@ var BrokerState = class {
       this.scheduleFlush(peer, LANE_DATA);
       return true;
     }
-    if (peer.ctlQueue.bufferedBytes >= this.maxLaneBytes) {
+    if (peer.ctlQueue.bufferedBytes + encoded.length > this.maxLaneBytes) {
       trace(`drop ctl type=${frame.typeId} stream=${frame.streamId} role=${role} session=${peerSessionId} reason=ctl-queue-full`);
       this.recordEvent("queue_drop", {
         reason: "ctl-queue-full",
@@ -4532,14 +4707,11 @@ var BrokerState = class {
       ws.send(payload, { binary: true }, (error) => {
         if (error) {
           if (lane === LANE_CTL) {
-            peer.ctlQueue.items.unshift(payload);
-            peer.ctlQueue.bufferedBytes += payload.length;
+            peer.ctlQueue.unshift(payload);
           } else if (sourceKind === "pri") {
-            peer.dataPriQueue.items.unshift(payload);
-            peer.dataPriQueue.bufferedBytes += payload.length;
+            peer.dataPriQueue.unshift(payload);
           } else {
-            peer.dataBulkQueue.items.unshift(payload);
-            peer.dataBulkQueue.bufferedBytes += payload.length;
+            peer.dataBulkQueue.unshift(payload);
           }
           peer.flushScheduled[lane] = false;
           trace(`flush error lane=${lane} peer=${peer.peerSessionId} error=${error}`);
@@ -4659,7 +4831,7 @@ var BrokerState = class {
   }
   handleDnsQuery(helperSessionId, lane, frame) {
     let openError = "";
-    let agentSessionId = this.agentSessionId;
+    let agentSessionId = this.selectAgentSessionId();
     const helperPeer = this.peers.get(this.peerKey("helper", helperSessionId));
     const helperPeerLabel = helperPeer ? helperPeer.peerLabel : helperSessionId;
     if (!helperPeer) {
@@ -4769,7 +4941,7 @@ var BrokerState = class {
   }
   handleOpen(helperSessionId, frame) {
     let openError = "";
-    let agentSessionId = this.agentSessionId;
+    let agentSessionId = this.selectAgentSessionId();
     const helperPeer = this.peers.get(this.peerKey("helper", helperSessionId));
     const helperPeerLabel = helperPeer ? helperPeer.peerLabel : helperSessionId;
     if (!helperPeer) {
@@ -4827,7 +4999,7 @@ var BrokerState = class {
       agent_stream_id: agentStreamId,
       helper_peer_label: helperPeerLabel
     });
-    this.queueFrame(
+    const queued = this.queueFrame(
       "agent",
       agentSessionId,
       {
@@ -4839,6 +5011,23 @@ var BrokerState = class {
       },
       this.agentDownCombinedDataLane ? "pri" : null
     );
+    if (!queued) {
+      this.recordEvent("open_fail", {
+        helper_session_id: helperSessionId,
+        helper_stream_id: frame.streamId,
+        agent_session_id: agentSessionId,
+        agent_stream_id: agentStreamId,
+        reason: "agent-queue-full"
+      });
+      this.dropStream(stream, "agent-queue-full");
+      this.queueFrame("helper", helperSessionId, {
+        typeId: FRAME_OPEN_FAIL,
+        flags: 0,
+        streamId: frame.streamId,
+        offset: 0,
+        payload: makeErrorPayload("hidden agent queue unavailable")
+      }, this.helperControlLane());
+    }
   }
   reserveHelperOpen(peer) {
     const currentMs = nowMs();
@@ -4853,7 +5042,7 @@ var BrokerState = class {
     peer.openEventsMs.push(currentMs);
     return "";
   }
-  dropStream(stream) {
+  dropStream(stream, reason = "") {
     this.clearStreamReplay(stream);
     this.streamsByHelper.delete(this.streamHelperKey(stream.helperSessionId, stream.helperStreamId));
     this.streamsByAgent.delete(stream.agentStreamId);
@@ -4867,7 +5056,8 @@ var BrokerState = class {
       helper_fin_offset: stream.helperFinOffset,
       agent_fin_offset: stream.agentFinOffset,
       helper_ack_offset: stream.helperAckOffset,
-      agent_ack_offset: stream.agentAckOffset
+      agent_ack_offset: stream.agentAckOffset,
+      reason
     });
     const helperPeer = this.peers.get(this.peerKey("helper", stream.helperSessionId));
     if (helperPeer && helperPeer.activeStreams > 0) {
@@ -4962,8 +5152,7 @@ var BrokerState = class {
       }
       this.peers.delete(key);
       if (peer.role === "agent" && this.agentSessionId === peer.peerSessionId) {
-        this.agentSessionId = "";
-        this.agentPeerLabel = "";
+        this.selectAgentPeer();
       }
     }
     for (const stream of Array.from(this.streamsByAgent.values())) {
@@ -5036,6 +5225,7 @@ var BrokerState = class {
         });
       }
     }
+    this.selectAgentPeer();
     const payload = {
       ok: true,
       pid: process.pid,
@@ -5180,19 +5370,24 @@ function parseWebSocketLaneRoute(route) {
 function connectionHeaders(req) {
   const cookies = parseCookieHeader(req.headers.cookie || "");
   const authorization = String(req.headers.authorization || "");
+  const cipherSuite = String(cookies.twoman_cipher || req.headers["x-twoman-cipher"] || "").trim();
   let token = "";
   if (authorization.toLowerCase().startsWith("bearer ")) {
     token = authorization.slice(7).trim();
   }
   if (!token) {
-    token = String(cookies.twoman_auth || req.headers["x-relay-token"] || "");
+    token = String(cookies._cfauth || cookies.twoman_auth || req.headers["x-relay-token"] || "");
   }
   return {
     token,
-    role: String(cookies._cf_role || req.headers["x-cf-role"] || ""),
-    peer: String(cookies._cf_lspa || req.headers["x-cf-lspa"] || ""),
-    session: String(cookies._wp_syncId || req.headers["x-wp-syncid"] || "")
+    cipherSuite: cipherSuite ? SUPPORTED_CIPHER_SUITES.has(cipherSuite) ? cipherSuite : "" : CIPHER_SUITE_HMAC_SHA256_CTR,
+    role: String(cookies._cf_role || cookies.twoman_role || req.headers["x-cf-role"] || req.headers["x-twoman-role"] || ""),
+    peer: String(cookies._cf_lspa || cookies.twoman_peer || req.headers["x-cf-lspa"] || req.headers["x-twoman-peer"] || ""),
+    session: String(cookies._wp_syncId || cookies.twoman_session || req.headers["x-wp-syncid"] || req.headers["x-twoman-session"] || "")
   };
+}
+function tokenForAuthenticatedHeaders(headers) {
+  return String(headers && headers.token ? headers.token : "twoman-default-key");
 }
 function isObserverAuthorized(req) {
   const identity = connectionHeaders(req);
@@ -5260,18 +5455,27 @@ async function handleUploadProbe(req, res) {
   const started = Date.now();
   const events = [];
   let totalBytes = 0;
+  let totalChunks = 0;
+  let omittedEvents = 0;
+  const maxEvents = state ? state.uploadProbeEventLimit : DEFAULT_UPLOAD_PROBE_EVENT_LIMIT;
   for await (const chunk of req) {
+    totalChunks += 1;
     totalBytes += chunk.length;
-    events.push({
-      offset_ms: Date.now() - started,
-      chunk_bytes: chunk.length,
-      total_bytes: totalBytes
-    });
+    if (events.length < maxEvents) {
+      events.push({
+        offset_ms: Date.now() - started,
+        chunk_bytes: chunk.length,
+        total_bytes: totalBytes
+      });
+    } else {
+      omittedEvents += 1;
+    }
   }
   jsonResponse(res, 200, {
     ok: true,
     total_bytes: totalBytes,
-    chunks: events.length,
+    chunks: totalChunks,
+    omitted_events: omittedEvents,
     events
   });
 }
@@ -5293,7 +5497,7 @@ function processInboundFrames(role, sessionId, externalLane, decoder, chunk) {
   }
   return frames.length;
 }
-async function handleLaneDownStream(peer, lane, res) {
+async function handleLaneDownStream(peer, lane, res, authToken, cipherSuite) {
   const started = Date.now();
   const maxDurationMs = 3e4;
   const waitTimeoutMs = lane === LANE_CTL ? 1e3 : 1e3;
@@ -5309,14 +5513,9 @@ async function handleLaneDownStream(peer, lane, res) {
     "Transfer-Encoding": "chunked"
   });
   try {
-    let tokenStr = "twoman-default-key";
-    if (peer.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-      tokenStr = loadedConfig.agent_tokens[0];
-    } else if (peer.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-      tokenStr = loadedConfig.client_tokens[0];
-    }
+    const tokenStr = String(authToken || "twoman-default-key");
     const iv = crypto.randomBytes(16);
-    const cipher = new TransportCipher(Buffer.from(tokenStr), iv);
+    const cipher = new TransportCipher(Buffer.from(tokenStr), iv, cipherSuite);
     if (!res.write(iv)) {
       await new Promise((resolve) => res.once("drain", resolve));
     }
@@ -5340,9 +5539,9 @@ async function handleLaneDownStream(peer, lane, res) {
 var server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const route = state.normalizePath(url.pathname);
-  const healthPublic2 = Boolean(loadedConfig.health_public);
+  const healthPublic = Boolean(loadedConfig.health_public);
   if (isHealthRoute(route)) {
-    if (!healthPublic2 && !isObserverAuthorized(req)) {
+    if (!healthPublic && !isObserverAuthorized(req)) {
       jsonResponse(res, 403, { error: "forbidden" });
       return;
     }
@@ -5350,7 +5549,7 @@ var server = http.createServer(async (req, res) => {
     return;
   }
   if (route === "/pid") {
-    if (!healthPublic2 && !isObserverAuthorized(req)) {
+    if (!healthPublic && !isObserverAuthorized(req)) {
       jsonResponse(res, 403, { error: "forbidden" });
       return;
     }
@@ -5358,7 +5557,7 @@ var server = http.createServer(async (req, res) => {
     return;
   }
   if (route === "/connect-probe") {
-    if (!healthPublic2 && !isObserverAuthorized(req)) {
+    if (!healthPublic && !isObserverAuthorized(req)) {
       jsonResponse(res, 403, { error: "forbidden" });
       return;
     }
@@ -5366,7 +5565,7 @@ var server = http.createServer(async (req, res) => {
     return;
   }
   if (route === "/stream") {
-    if (!healthPublic2 && !isObserverAuthorized(req)) {
+    if (!healthPublic && !isObserverAuthorized(req)) {
       jsonResponse(res, 403, { error: "forbidden" });
       return;
     }
@@ -5374,7 +5573,7 @@ var server = http.createServer(async (req, res) => {
     return;
   }
   if (route === "/upload_probe" && req.method === "POST") {
-    if (!healthPublic2 && !isObserverAuthorized(req)) {
+    if (!healthPublic && !isObserverAuthorized(req)) {
       jsonResponse(res, 403, { error: "forbidden" });
       return;
     }
@@ -5390,6 +5589,10 @@ var server = http.createServer(async (req, res) => {
       jsonResponse(res, 403, { error: "invalid role or token" });
       return;
     }
+    if (!headers.cipherSuite) {
+      jsonResponse(res, 400, { error: "unsupported cipher suite" });
+      return;
+    }
     const peer = state.ensurePeer(headers.role, headers.peer, headers.session);
     if (req.method === "POST" && direction === "up") {
       try {
@@ -5398,32 +5601,32 @@ var server = http.createServer(async (req, res) => {
         jsonResponse(res, 415, { error: error.message });
         return;
       }
-      const decoder = new FrameDecoder();
+      const decoder = new FrameDecoder(state.maxFramePayloadBytes);
       let frameCount = 0;
       let initCipher = null;
       let ivBuffer = Buffer.alloc(0);
-      let tokenStr = "twoman-default-key";
-      if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-        tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-        tokenStr = loadedConfig.client_tokens[0];
-      }
-      for await (let chunk of req) {
-        if (!initCipher) {
-          const needed = 16 - ivBuffer.length;
-          if (chunk.length >= needed) {
-            ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
-            chunk = chunk.subarray(needed);
-            initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer);
-          } else {
-            ivBuffer = Buffer.concat([ivBuffer, chunk]);
-            continue;
+      const tokenStr = tokenForAuthenticatedHeaders(headers);
+      try {
+        for await (let chunk of req) {
+          if (!initCipher) {
+            const needed = 16 - ivBuffer.length;
+            if (chunk.length >= needed) {
+              ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
+              chunk = chunk.subarray(needed);
+              initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer, headers.cipherSuite);
+            } else {
+              ivBuffer = Buffer.concat([ivBuffer, chunk]);
+              continue;
+            }
+          }
+          if (chunk.length > 0) {
+            const ptChunk = initCipher.process(chunk);
+            frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
           }
         }
-        if (chunk.length > 0) {
-          const ptChunk = initCipher.process(chunk);
-          frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
-        }
+      } catch (error) {
+        jsonResponse(res, error.statusCode || 400, { error: String(error && error.message ? error.message : error) });
+        return;
       }
       jsonResponse(res, 200, { ok: true, frames: frameCount });
       return;
@@ -5431,22 +5634,17 @@ var server = http.createServer(async (req, res) => {
     if (req.method === "GET" && direction === "down") {
       const roleDownWaitMs = state.downWaitMsForRole(headers.role);
       if (lane === LANE_CTL && (headers.role === "helper" && state.streamingCtlDownHelper || headers.role === "agent" && state.streamingCtlDownAgent)) {
-        await handleLaneDownStream(peer, lane, res);
+        await handleLaneDownStream(peer, lane, res, tokenForAuthenticatedHeaders(headers), headers.cipherSuite);
         return;
       }
       if (lane === LANE_DATA && (headers.role === "helper" && state.streamingDataDownHelper || headers.role === "agent" && state.streamingDataDownAgent)) {
-        await handleLaneDownStream(peer, lane, res);
+        await handleLaneDownStream(peer, lane, res, tokenForAuthenticatedHeaders(headers), headers.cipherSuite);
         return;
       }
       const payload = lane === LANE_CTL ? await state.nextCtlPayload(peer, roleDownWaitMs.ctl) : await state.nextDataPayload(peer, roleDownWaitMs.data);
-      let tokenStr = "twoman-default-key";
-      if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-        tokenStr = loadedConfig.agent_tokens[0];
-      } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-        tokenStr = loadedConfig.client_tokens[0];
-      }
+      const tokenStr = tokenForAuthenticatedHeaders(headers);
       const iv = crypto.randomBytes(16);
-      const cipher = new TransportCipher(Buffer.from(tokenStr), iv);
+      const cipher = new TransportCipher(Buffer.from(tokenStr), iv, headers.cipherSuite);
       const encPayload = Buffer.concat([iv, cipher.process(payload)]);
       res.writeHead(200, {
         "Content-Type": BINARY_MEDIA_TYPE,
@@ -5466,6 +5664,12 @@ var echoWss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, "http://localhost");
   const route = state.normalizePath(url.pathname);
+  const healthPublic = Boolean(loadedConfig.health_public);
+  if (!state.websocketPublicEnabled) {
+    socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   if (route === "/ws-echo") {
     if (!healthPublic && !isObserverAuthorized(req)) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
@@ -5489,6 +5693,11 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
+  if (!headers.cipherSuite) {
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws._twomanHeaders = headers;
     ws._twomanLane = lane;
@@ -5504,15 +5713,10 @@ wss.on("connection", (ws) => {
   const headers = ws._twomanHeaders;
   const lane = ws._twomanLane;
   const peer = state.bindChannel(headers.role, headers.peer, headers.session, lane, ws);
-  const decoder = new FrameDecoder();
-  let tokenStr = "twoman-default-key";
-  if (headers.role === "agent" && loadedConfig.agent_tokens && loadedConfig.agent_tokens.length > 0) {
-    tokenStr = loadedConfig.agent_tokens[0];
-  } else if (headers.role !== "agent" && loadedConfig.client_tokens && loadedConfig.client_tokens.length > 0) {
-    tokenStr = loadedConfig.client_tokens[0];
-  }
+  const decoder = new FrameDecoder(state.maxFramePayloadBytes);
+  const tokenStr = tokenForAuthenticatedHeaders(headers);
   const sendIv = crypto.randomBytes(16);
-  const sendCipher = new TransportCipher(Buffer.from(tokenStr), sendIv);
+  const sendCipher = new TransportCipher(Buffer.from(tokenStr), sendIv, headers.cipherSuite);
   let recvCipher = null;
   let recvIvBuffer = Buffer.alloc(0);
   const originalSend = ws.send.bind(ws);
@@ -5535,7 +5739,7 @@ wss.on("connection", (ws) => {
       if (data.length >= needed) {
         recvIvBuffer = Buffer.concat([recvIvBuffer, data.subarray(0, needed)]);
         data = data.subarray(needed);
-        recvCipher = new TransportCipher(Buffer.from(tokenStr), recvIvBuffer);
+        recvCipher = new TransportCipher(Buffer.from(tokenStr), recvIvBuffer, headers.cipherSuite);
       } else {
         recvIvBuffer = Buffer.concat([recvIvBuffer, data]);
         return;
@@ -5546,7 +5750,18 @@ wss.on("connection", (ws) => {
       peer.touch();
       state.metrics.ws_messages_in[lane] += 1;
       state.metrics.ws_bytes_in[lane] += ptData.length;
-      processInboundFrames(headers.role, headers.session, lane, decoder, ptData);
+      try {
+        processInboundFrames(headers.role, headers.session, lane, decoder, ptData);
+      } catch (error) {
+        state.recordEvent("ws_frame_error", {
+          role: headers.role,
+          peer_label: headers.peer,
+          peer_session_id: headers.session,
+          lane,
+          error: String(error && error.message ? error.message : error)
+        });
+        ws.close(1009, "frame rejected");
+      }
     }
   });
   ws.on("close", () => {
@@ -5573,7 +5788,7 @@ wss.on("connection", (ws) => {
 });
 setInterval(() => {
   state.cleanup();
-}, 1e4).unref();
+}, 1e4);
 setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) {
@@ -5583,7 +5798,7 @@ setInterval(() => {
     ws.isAlive = false;
     ws.ping();
   });
-}, HEARTBEAT_INTERVAL_MS).unref();
+}, HEARTBEAT_INTERVAL_MS);
 server.listen(process.env.PORT || 3e3, () => {
   trace(`listening pid=${process.pid} base_uri=${state.baseUri || "/"}`);
   runtimeLog(`listening pid=${process.pid} base_uri=${state.baseUri || "/"} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);

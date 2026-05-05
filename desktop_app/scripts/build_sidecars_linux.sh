@@ -12,24 +12,16 @@ GATEWAY_NAME="${TWOMAN_GATEWAY_BINARY_BASENAME:-twoman-gateway}"
 rm -rf "$BUILD_ROOT"
 mkdir -p "$BUILD_ROOT" "$DIST_DIR"
 
+if ! command -v go >/dev/null 2>&1; then
+  echo "go is required to build the Twoman Go helper sidecar" >&2
+  exit 1
+fi
+
+(cd "$ROOT/helper-agent" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$DIST_DIR/$HELPER_NAME" .)
+
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip wheel >/dev/null
 "$VENV_DIR/bin/pip" install -r "$ROOT/requirements.txt" pyinstaller >/dev/null
-
-"$VENV_DIR/bin/pyinstaller" \
-  --noconfirm \
-  --clean \
-  --onefile \
-  --strip \
-  --name "$HELPER_NAME" \
-  --paths "$ROOT" \
-  --hidden-import local_client.helper \
-  --hidden-import twoman_protocol \
-  --hidden-import twoman_transport \
-  --distpath "$DIST_DIR" \
-  --workpath "$BUILD_ROOT/work-helper" \
-  --specpath "$BUILD_ROOT/spec-helper" \
-  "$ROOT/local_client/helper.py"
 
 "$VENV_DIR/bin/pyinstaller" \
   --noconfirm \

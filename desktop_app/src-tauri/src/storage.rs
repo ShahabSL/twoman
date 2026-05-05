@@ -5,7 +5,9 @@ use std::{
 
 use tauri::{AppHandle, Manager, Runtime};
 
-use crate::models::{ClientProfile, ConnectionMode, PersistedSettings, SharedProxy, SharedProxyProtocol};
+use crate::models::{
+    ClientProfile, ConnectionMode, PersistedSettings, SharedProxy, SharedProxyProtocol,
+};
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
@@ -59,7 +61,12 @@ impl AppPaths {
 fn portable_root_from_current_exe() -> Option<PathBuf> {
     if std::env::var("TWOMAN_PORTABLE")
         .ok()
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
     {
         let exe = std::env::current_exe().ok()?;
@@ -215,7 +222,10 @@ pub fn validate_share(share: &SharedProxy) -> Result<(), String> {
     if share.listen_port == 0 {
         return Err("share port must be greater than zero".into());
     }
-    if !matches!(share.protocol, SharedProxyProtocol::Socks | SharedProxyProtocol::Http) {
+    if !matches!(
+        share.protocol,
+        SharedProxyProtocol::Socks | SharedProxyProtocol::Http
+    ) {
         return Err("share protocol is invalid".into());
     }
     if share.username.trim().is_empty() || share.password.trim().is_empty() {
@@ -226,7 +236,10 @@ pub fn validate_share(share: &SharedProxy) -> Result<(), String> {
 
 pub fn normalize_settings(settings: &mut PersistedSettings, profiles: &[ClientProfile]) {
     if let Some(selected_profile_id) = &settings.selected_profile_id {
-        if profiles.iter().any(|profile| &profile.id == selected_profile_id) {
+        if profiles
+            .iter()
+            .any(|profile| &profile.id == selected_profile_id)
+        {
             return;
         }
     }
@@ -263,9 +276,14 @@ mod tests {
         let root = temp_root();
         let exe_dir = root.join("portable-app");
         fs::create_dir_all(exe_dir.join("portable-data")).expect("create portable-data");
-        let exe_path = exe_dir.join(if cfg!(windows) { "Twoman.exe" } else { "twoman" });
+        let exe_path = exe_dir.join(if cfg!(windows) {
+            "Twoman.exe"
+        } else {
+            "twoman"
+        });
 
-        let resolved = portable_root_from_exe_path(&exe_path).expect("portable root should resolve");
+        let resolved =
+            portable_root_from_exe_path(&exe_path).expect("portable root should resolve");
         assert_eq!(resolved, exe_dir.join("portable-data"));
 
         let _ = fs::remove_dir_all(root);
@@ -277,9 +295,14 @@ mod tests {
         let exe_dir = root.join("portable-app");
         fs::create_dir_all(&exe_dir).expect("create exe dir");
         fs::write(exe_dir.join("twoman-portable"), b"").expect("create marker");
-        let exe_path = exe_dir.join(if cfg!(windows) { "Twoman.exe" } else { "twoman" });
+        let exe_path = exe_dir.join(if cfg!(windows) {
+            "Twoman.exe"
+        } else {
+            "twoman"
+        });
 
-        let resolved = portable_root_from_exe_path(&exe_path).expect("portable root should resolve");
+        let resolved =
+            portable_root_from_exe_path(&exe_path).expect("portable root should resolve");
         assert_eq!(resolved, exe_dir.join("portable-data"));
 
         let _ = fs::remove_dir_all(root);

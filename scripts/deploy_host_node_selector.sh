@@ -104,7 +104,7 @@ if [ -n "${TWOMAN_PUBLIC_PROXY_URL}" ]; then
   PUBLIC_PROXY_ARGS+=(--proxy "${TWOMAN_PUBLIC_PROXY_URL}")
 fi
 
-TWOMAN_CAMOUFLAGE_SITE_ENABLED="${TWOMAN_CAMOUFLAGE_SITE_ENABLED:-false}"
+TWOMAN_CAMOUFLAGE_SITE_ENABLED="${TWOMAN_CAMOUFLAGE_SITE_ENABLED:-true}"
 TWOMAN_CAMOUFLAGE_DEPLOYMENT_ID="${TWOMAN_CAMOUFLAGE_DEPLOYMENT_ID:-}"
 TWOMAN_CAMOUFLAGE_SITE_NAME="${TWOMAN_CAMOUFLAGE_SITE_NAME:-}"
 TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX="${TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX:-true}"
@@ -137,14 +137,23 @@ TWOMAN_NODE_APP_MODE="${TWOMAN_NODE_APP_MODE:-production}"
 TWOMAN_ADMIN_SCRIPT_NAME="${TWOMAN_ADMIN_SCRIPT_NAME:-rahkar_negahban.php}"
 TWOMAN_TRACE="${TWOMAN_TRACE:-0}"
 TWOMAN_DEBUG_STATS="${TWOMAN_DEBUG_STATS:-0}"
-TWOMAN_DOWN_WAIT_CTL_MS="${TWOMAN_DOWN_WAIT_CTL_MS:-250}"
-TWOMAN_DOWN_WAIT_DATA_MS="${TWOMAN_DOWN_WAIT_DATA_MS:-250}"
+TWOMAN_DOWN_WAIT_CTL_MS="${TWOMAN_DOWN_WAIT_CTL_MS:-75}"
+TWOMAN_DOWN_WAIT_DATA_MS="${TWOMAN_DOWN_WAIT_DATA_MS:-75}"
+TWOMAN_MAX_FRAME_PAYLOAD_BYTES="${TWOMAN_MAX_FRAME_PAYLOAD_BYTES:-2097152}"
+TWOMAN_UPLOAD_PROBE_EVENT_LIMIT="${TWOMAN_UPLOAD_PROBE_EVENT_LIMIT:-4096}"
+TWOMAN_AGENT_PEER_ID="${TWOMAN_AGENT_PEER_ID:-agent-main}"
+TWOMAN_HELPER_DATA_UP_WORKERS="${TWOMAN_HELPER_DATA_UP_WORKERS:-8}"
+TWOMAN_AGENT_DATA_UP_WORKERS="${TWOMAN_AGENT_DATA_UP_WORKERS:-8}"
+TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES="${TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES:-524288}"
+TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES="${TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES:-524288}"
+TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS:-0.006}"
+TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS:-0.006}"
 TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE="${TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE:-true}"
 TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE="${TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE:-true}"
-# The audited cPanel Node front buffers long-lived helper data streams and
-# delays FIN delivery. Keep helper downlinks bounded by default.
-TWOMAN_STREAMING_DATA_DOWN_HELPER="${TWOMAN_STREAMING_DATA_DOWN_HELPER:-false}"
-TWOMAN_STREAMING_DATA_DOWN_AGENT="${TWOMAN_STREAMING_DATA_DOWN_AGENT:-false}"
+# Go dataplane defaults to the measured fast cPanel profile: collapsed data
+# lanes and short bounded polls. Operators can override these envs for rollback.
+TWOMAN_STREAMING_DATA_DOWN_HELPER="${TWOMAN_STREAMING_DATA_DOWN_HELPER:-true}"
+TWOMAN_STREAMING_DATA_DOWN_AGENT="${TWOMAN_STREAMING_DATA_DOWN_AGENT:-true}"
 TWOMAN_WEBSOCKET_PUBLIC_ENABLED="${TWOMAN_WEBSOCKET_PUBLIC_ENABLED:-false}"
 
 json_get() {
@@ -226,14 +235,17 @@ CONFIG_JSON="$(cat <<EOF
   "base_uri": "${TWOMAN_NODE_APP_URI}",
   "client_tokens": ["${TWOMAN_CLIENT_TOKEN}"],
   "agent_tokens": ["${TWOMAN_AGENT_TOKEN}"],
+  "preferred_agent_peer_label": "${TWOMAN_AGENT_PEER_ID}",
   "peer_ttl_seconds": 90,
   "stream_ttl_seconds": 300,
-  "max_lane_bytes": 16777216,
+  "max_lane_bytes": 67108864,
+  "max_frame_payload_bytes": ${TWOMAN_MAX_FRAME_PAYLOAD_BYTES},
+  "upload_probe_event_limit": ${TWOMAN_UPLOAD_PROBE_EVENT_LIMIT},
   "max_streams_per_peer_session": 256,
   "max_open_rate_per_peer_session": 120,
   "open_rate_window_seconds": 10,
-  "max_peer_buffered_bytes": 33554432,
-  "flush_backpressure_bytes": 524288,
+  "max_peer_buffered_bytes": 134217728,
+  "flush_backpressure_bytes": 2097152,
   "flush_retry_delay_ms": 5,
   "down_wait_ms": {
     "ctl": ${TWOMAN_DOWN_WAIT_CTL_MS},
@@ -241,13 +253,19 @@ CONFIG_JSON="$(cat <<EOF
   },
   "helper_down_combined_data_lane": ${TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE},
   "agent_down_combined_data_lane": ${TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE},
+  "helper_data_up_workers": ${TWOMAN_HELPER_DATA_UP_WORKERS},
+  "agent_data_up_workers": ${TWOMAN_AGENT_DATA_UP_WORKERS},
+  "helper_data_upload_max_batch_bytes": ${TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES},
+  "agent_data_upload_max_batch_bytes": ${TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES},
+  "helper_data_upload_flush_delay_seconds": ${TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS},
+  "agent_data_upload_flush_delay_seconds": ${TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS},
   "streaming_data_down_helper": ${TWOMAN_STREAMING_DATA_DOWN_HELPER},
   "streaming_data_down_agent": ${TWOMAN_STREAMING_DATA_DOWN_AGENT},
   "websocket_public_enabled": ${TWOMAN_WEBSOCKET_PUBLIC_ENABLED},
   "lane_profiles": {
     "ctl": { "max_bytes": 4096, "max_frames": 8, "hold_ms": 1, "pad_min": 1024 },
     "pri": { "max_bytes": 32768, "max_frames": 16, "hold_ms": 2, "pad_min": 1024 },
-    "bulk": { "max_bytes": 262144, "max_frames": 64, "hold_ms": 4, "pad_min": 0 }
+    "bulk": { "max_bytes": 1048576, "max_frames": 128, "hold_ms": 4, "pad_min": 0 }
   },
   "trace_enabled": ${TWOMAN_TRACE},
   "debug_stats_enabled": ${TWOMAN_DEBUG_STATS}

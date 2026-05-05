@@ -10,10 +10,9 @@
   - `scripts/install_hidden_server_local.sh`
   - `scripts/start_client.sh`
 - Verify the focused CI checks pass locally:
-  - `python3 -m unittest tests.test_transport_proxy tests.test_transport_profiles tests.test_twoman_dns tests.test_twoman_proxy tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_desktop_client_tui`
-  - `bash tests/run_e2e.sh`
-  - `bash tests/run_e2e_node_http.sh`
-  - `bash tests/run_e2e_node_ws.sh`
+  - `cd helper-agent && go test ./...`
+  - `python3 -m unittest tests.test_twoman_dns tests.test_twoman_proxy tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_desktop_client_tui`
+  - `bash tests/run_e2e_go_node_http.sh`
   - `bash tests/run_desktop_client_e2e.sh`
 - Rebuild release artifacts when shared runtime files changed:
   - Android APK/AAB

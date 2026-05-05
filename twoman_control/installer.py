@@ -151,8 +151,8 @@ def _copy_selected_paths(source_root: Path, bundle_root: Path) -> None:
     for relative in [
         "scripts",
         "host",
+        "helper-agent",
         "hidden_server",
-        "local_client",
         "twoman_control",
     ]:
         shutil.copytree(source_root / relative, bundle_root / relative, ignore=ignore)
@@ -164,7 +164,6 @@ def _copy_selected_paths(source_root: Path, bundle_root: Path) -> None:
         "twoman_http.py",
         "twoman_proxy.py",
         "twoman_protocol.py",
-        "twoman_transport.py",
     ]:
         shutil.copy2(source_root / filename, bundle_root / filename)
 
@@ -345,6 +344,7 @@ def _helper_probe(
         config_path = temp_path / "helper.json"
         listen_state_path = temp_path / "listen-state.json"
         log_path = temp_path / "helper.log"
+        go_helper = temp_path / "twoman-helper-agent"
         config = {
             "transport": "http",
             "broker_base_url": broker_base_url,
@@ -365,8 +365,20 @@ def _helper_probe(
             "http2_enabled": {"ctl": http2_ctl, "data": http2_data},
         }
         config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        if not shutil.which("go"):
+            raise RuntimeError("go is required to probe the Twoman Go helper runtime")
+        build = subprocess.run(
+            ["go", "build", "-trimpath", "-ldflags", "-s -w", "-o", str(go_helper), "."],
+            cwd=bundle_root / "helper-agent",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if build.returncode != 0:
+            raise RuntimeError(f"failed to build Go helper probe: {build.stderr.strip()}")
+        helper_command = [str(go_helper), "--config", str(config_path), "--mode", "helper"]
         process = subprocess.Popen(
-            [sys.executable, str(bundle_root / "local_client" / "helper.py"), "--config", str(config_path)],
+            helper_command,
             cwd=bundle_root,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

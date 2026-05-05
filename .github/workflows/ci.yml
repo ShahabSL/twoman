@@ -26,10 +26,14 @@ jobs:
         run: |
           python3 -m py_compile \
             twoman_protocol.py \
-            twoman_transport.py \
-            local_client/helper.py \
-            hidden_server/agent.py \
+            twoman_crypto.py \
+            twoman_dns.py \
+            twoman_http.py \
+            twoman_proxy.py \
+            runtime_diagnostics.py \
+            hidden_server/agent_watchdog.py \
             host/runtime/http_broker_daemon.py \
+            scripts/benchmark_live_ceiling.py \
             desktop_client/models.py \
             desktop_client/runtime.py \
             desktop_client/controller.py \
@@ -41,6 +45,15 @@ jobs:
             tests/test_twoman_control_installer.py \
             tests/test_twoman_control_manager.py
 
+      - name: Run Go helper-agent tests
+        working-directory: helper-agent
+        run: go test ./...
+
+      - name: Verify Node broker parses
+        run: |
+          node --check host/node_selector/broker.js
+          node --check host/node_selector/app.js
+
       - name: Verify shell scripts parse
         run: |
           bash -n \
@@ -49,19 +62,19 @@ jobs:
             scripts/deploy_hidden_server.sh \
             scripts/deploy_host.sh \
             scripts/deploy_host_node_selector.sh \
-            scripts/deploy_host_passenger.sh
+            scripts/deploy_host_passenger.sh \
+            scripts/start_client.sh \
+            tests/run_e2e_go_node_http.sh \
+            tests/run_desktop_client_e2e.sh
 
-      - name: Run bridge backend smoke test
-        run: bash tests/run_e2e.sh
-
-      - name: Run node backend smoke test
-        run: bash tests/run_e2e_node_http.sh
+      - name: Run Go node backend smoke test
+        run: bash tests/run_e2e_go_node_http.sh
 
       - name: Run desktop TUI tests
         run: python3 -m unittest tests/test_desktop_client_tui.py
 
-      - name: Run installer and transport tests
-        run: python3 -m unittest tests.test_transport_proxy tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager
+      - name: Run installer tests
+        run: python3 -m unittest tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_twoman_control_registry
 
       - name: Run desktop client end-to-end test
         run: bash tests/run_desktop_client_e2e.sh
@@ -69,18 +82,14 @@ jobs:
       - name: Build frozen Linux desktop client
         run: ./desktop_client/build_linux.sh
 
+      - name: Check Tauri desktop app
+        run: cargo check --manifest-path desktop_app/src-tauri/Cargo.toml
+
   android-build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: android-client/requirements-chaquopy.txt
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -91,6 +100,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Install Android NDK
+        run: sdkmanager "ndk;27.0.12077973"
+
       - name: Build Android debug APK
         working-directory: android-client
-        run: ./gradlew assembleArm64Debug
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
+          ./gradlew assembleArm64Debug

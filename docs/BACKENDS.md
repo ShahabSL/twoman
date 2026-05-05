@@ -107,9 +107,7 @@ Primary files:
 
 - `host/node_selector/broker.js`
 - `scripts/deploy_host_node_selector.sh`
-- `tests/run_e2e_node_http.sh`
-- `tests/run_e2e_node_ws.sh`
-- `tests/benchmark_transport_profiles.sh`
+- `tests/run_e2e_go_node_http.sh`
 - `docs/CLPERSIST_METHOD.md`
 
 ### `passenger_python`

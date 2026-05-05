@@ -32,8 +32,11 @@ TWOMAN_IDLE_REPOLL_CTL="${TWOMAN_IDLE_REPOLL_CTL:-0.05}"
 TWOMAN_IDLE_REPOLL_DATA="${TWOMAN_IDLE_REPOLL_DATA:-0.1}"
 TWOMAN_DOWN_READ_TIMEOUT_SECONDS="${TWOMAN_DOWN_READ_TIMEOUT_SECONDS:-10}"
 TWOMAN_DOWN_STREAM_MAX_SESSION_SECONDS="${TWOMAN_DOWN_STREAM_MAX_SESSION_SECONDS:-60}"
-TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-131072}"
+TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-524288}"
 TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-0.006}"
+TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-8}"
+TWOMAN_MAX_FRAME_PAYLOAD_BYTES="${TWOMAN_MAX_FRAME_PAYLOAD_BYTES:-2097152}"
+TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS="${TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS:-5}"
 TWOMAN_OPEN_CONNECT_TIMEOUT_SECONDS="${TWOMAN_OPEN_CONNECT_TIMEOUT_SECONDS:-12}"
 TWOMAN_PREFER_IPV4="${TWOMAN_PREFER_IPV4:-true}"
 TWOMAN_DISABLE_IPV6_ORIGIN="${TWOMAN_DISABLE_IPV6_ORIGIN:-false}"
@@ -42,6 +45,7 @@ TWOMAN_UPSTREAM_PROXY_URL="${TWOMAN_UPSTREAM_PROXY_URL:-}"
 TWOMAN_UPSTREAM_PROXY_LABEL="${TWOMAN_UPSTREAM_PROXY_LABEL:-}"
 TWOMAN_OUTBOUND_PROXY_URL="${TWOMAN_OUTBOUND_PROXY_URL:-}"
 TWOMAN_OUTBOUND_PROXY_LABEL="${TWOMAN_OUTBOUND_PROXY_LABEL:-}"
+TWOMAN_AUTO_WIREPROXY="${TWOMAN_AUTO_WIREPROXY:-true}"
 TWOMAN_AUTH_MODE="${TWOMAN_AUTH_MODE:-bearer}"
 TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED="${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED:-false}"
 TWOMAN_BINARY_MEDIA_TYPE="${TWOMAN_BINARY_MEDIA_TYPE:-image/webp}"
@@ -52,6 +56,14 @@ TWOMAN_HEALTH_TEMPLATE="${TWOMAN_HEALTH_TEMPLATE:-/health}"
 TWOMAN_AGENT_SERVICE_USER="${TWOMAN_AGENT_SERVICE_USER:-twoman}"
 TWOMAN_AGENT_SERVICE_GROUP="${TWOMAN_AGENT_SERVICE_GROUP:-twoman}"
 
+TMP_GO_BIN=""
+cleanup() {
+  if [ -n "${TMP_GO_BIN}" ] && [ -f "${TMP_GO_BIN}" ]; then
+    rm -f "${TMP_GO_BIN}"
+  fi
+}
+trap cleanup EXIT
+
 STREAMING_UP_JSON="[]"
 if [ -n "${TWOMAN_STREAMING_UP_LANES}" ]; then
   STREAMING_UP_JSON="$(python3 - <<'PY'
@@ -60,31 +72,6 @@ values=[item.strip() for item in os.environ["TWOMAN_STREAMING_UP_LANES"].split("
 print(json.dumps(values))
 PY
 )"
-fi
-
-UPSTREAM_PROXY_JSON="null"
-if [ -n "${TWOMAN_UPSTREAM_PROXY_URL}" ]; then
-  UPSTREAM_PROXY_JSON="$(python3 - <<'PY'
-import json, os
-print(json.dumps(os.environ["TWOMAN_UPSTREAM_PROXY_URL"]))
-PY
-)"
-fi
-
-OUTBOUND_PROXY_JSON="null"
-if [ -n "${TWOMAN_OUTBOUND_PROXY_URL}" ]; then
-  OUTBOUND_PROXY_JSON="$(python3 - <<'PY'
-import json, os
-print(json.dumps(os.environ["TWOMAN_OUTBOUND_PROXY_URL"]))
-PY
-)"
-fi
-
-SYSTEMD_AFTER="After=network-online.target"
-SYSTEMD_WANTS="Wants=network-online.target"
-if [ "${TWOMAN_UPSTREAM_PROXY_LABEL}" = "wireproxy" ] || [ "${TWOMAN_OUTBOUND_PROXY_LABEL}" = "wireproxy" ]; then
-  SYSTEMD_AFTER="After=network-online.target wireproxy.service"
-  SYSTEMD_WANTS="Wants=network-online.target wireproxy.service"
 fi
 
 SSH_OPTS=(-p "${TWOMAN_SERVER_PORT}" -o StrictHostKeyChecking=no)
@@ -100,25 +87,90 @@ if [ -n "${TWOMAN_SERVER_PASSWORD}" ]; then
   SSH_CMD=(sshpass -p "${TWOMAN_SERVER_PASSWORD}" "${SSH_CMD[@]}")
 fi
 
+remote_wireproxy_port_open() {
+  "${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "python3 - <<'PY'
+import socket
+s = socket.socket()
+s.settimeout(1.0)
+try:
+    s.connect(('127.0.0.1', 1280))
+except OSError:
+    raise SystemExit(1)
+finally:
+    s.close()
+PY
+" >/dev/null 2>&1
+}
+
+if [ "${TWOMAN_AUTO_WIREPROXY}" = "true" ] && remote_wireproxy_port_open; then
+  if [ -z "${TWOMAN_UPSTREAM_PROXY_URL}" ]; then
+    TWOMAN_UPSTREAM_PROXY_URL="socks5h://127.0.0.1:1280"
+    TWOMAN_UPSTREAM_PROXY_LABEL="wireproxy"
+    echo "Detected remote WireProxy on 127.0.0.1:1280; routing broker traffic through WARP."
+  fi
+  if [ -z "${TWOMAN_OUTBOUND_PROXY_URL}" ]; then
+    TWOMAN_OUTBOUND_PROXY_URL="${TWOMAN_UPSTREAM_PROXY_URL}"
+    TWOMAN_OUTBOUND_PROXY_LABEL="${TWOMAN_UPSTREAM_PROXY_LABEL:-wireproxy}"
+    echo "Routing hidden-agent outbound traffic through ${TWOMAN_OUTBOUND_PROXY_LABEL}."
+  fi
+fi
+
+UPSTREAM_PROXY_JSON="null"
+if [ -n "${TWOMAN_UPSTREAM_PROXY_URL}" ]; then
+  UPSTREAM_PROXY_JSON="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "${TWOMAN_UPSTREAM_PROXY_URL}")"
+fi
+
+OUTBOUND_PROXY_JSON="null"
+if [ -n "${TWOMAN_OUTBOUND_PROXY_URL}" ]; then
+  OUTBOUND_PROXY_JSON="$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "${TWOMAN_OUTBOUND_PROXY_URL}")"
+fi
+
+SYSTEMD_AFTER="After=network-online.target"
+SYSTEMD_WANTS="Wants=network-online.target"
+if [ "${TWOMAN_UPSTREAM_PROXY_LABEL}" = "wireproxy" ] || [ "${TWOMAN_OUTBOUND_PROXY_LABEL}" = "wireproxy" ]; then
+  SYSTEMD_AFTER="After=network-online.target wireproxy.service"
+  SYSTEMD_WANTS="Wants=network-online.target wireproxy.service"
+fi
+
+remote_goarch() {
+  local machine="$1"
+  case "${machine}" in
+    x86_64|amd64) echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    armv7l|armv7*) echo "arm" ;;
+    *) echo "unsupported:${machine}" ;;
+  esac
+}
+
+build_go_agent_binary() {
+  if ! command -v go >/dev/null 2>&1; then
+    echo "go is required to build the Go hidden-agent runtime" >&2
+    exit 1
+  fi
+  local machine goarch
+  machine="$("${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "uname -m")"
+  goarch="$(remote_goarch "${machine}")"
+  if [[ "${goarch}" == unsupported:* ]]; then
+    echo "unsupported remote architecture for Go runtime: ${machine}" >&2
+    exit 1
+  fi
+  TMP_GO_BIN="$(mktemp)"
+  echo "Building Go hidden-agent runtime for linux/${goarch}..."
+  (cd helper-agent && CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "-s -w" -o "${TMP_GO_BIN}" .)
+}
+
+build_go_agent_binary
+
 echo "Creating remote directory..."
 "${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "mkdir -p '${TWOMAN_SERVER_DIR}/systemd'"
 
 echo "Uploading agent files..."
 "${SCP_CMD[@]}" \
-  requirements.txt \
-  runtime_diagnostics.py \
-  twoman_crypto.py \
-  twoman_dns.py \
-  twoman_http.py \
-  twoman_proxy.py \
-  twoman_protocol.py \
-  twoman_transport.py \
-  hidden_server/agent.py \
+  "${TMP_GO_BIN}" \
   hidden_server/agent_watchdog.py \
-  hidden_server/install_watchdog.sh \
-  hidden_server/systemd/twoman-agent-watchdog.service \
   hidden_server/systemd/twoman-agent-watchdog.timer \
   "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}:${TWOMAN_SERVER_DIR}/"
+"${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "mv '${TWOMAN_SERVER_DIR}/$(basename "${TMP_GO_BIN}")' '${TWOMAN_SERVER_DIR}/twoman-helper-agent' && chmod 0755 '${TWOMAN_SERVER_DIR}/twoman-helper-agent'"
 
 CONFIG_JSON="$(cat <<EOF
 {
@@ -142,6 +194,8 @@ CONFIG_JSON="$(cat <<EOF
   "backoff_max_delay_seconds": 5,
   "flush_delay_seconds": 0.01,
   "max_batch_bytes": 65536,
+  "max_frame_payload_bytes": ${TWOMAN_MAX_FRAME_PAYLOAD_BYTES},
+  "send_queue_timeout_seconds": ${TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS},
   "verify_tls": ${TWOMAN_VERIFY_TLS},
   "peer_id": "${TWOMAN_AGENT_PEER_ID}",
   "outbound_proxy_label": "${TWOMAN_OUTBOUND_PROXY_LABEL}",
@@ -154,6 +208,9 @@ CONFIG_JSON="$(cat <<EOF
       "max_batch_bytes": ${TWOMAN_DATA_UP_MAX_BATCH_BYTES},
       "flush_delay_seconds": ${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS}
     }
+  },
+  "up_workers": {
+    "data": ${TWOMAN_DATA_UP_WORKERS}
   },
   "streaming_up_lanes": ${STREAMING_UP_JSON},
   "idle_repoll_delay_seconds": {
@@ -170,7 +227,7 @@ EOF
 
 SERVICE_CONTENT="$(cat <<EOF
 [Unit]
-Description=Twoman hidden agent
+Description=Twoman Go hidden agent
 ${SYSTEMD_AFTER}
 ${SYSTEMD_WANTS}
 
@@ -179,9 +236,8 @@ Type=simple
 WorkingDirectory=${TWOMAN_SERVER_DIR}
 User=${TWOMAN_AGENT_SERVICE_USER}
 Group=${TWOMAN_AGENT_SERVICE_GROUP}
-Environment=PYTHONUNBUFFERED=1
 Environment=TWOMAN_TRACE=${TWOMAN_TRACE}
-ExecStart=${TWOMAN_SERVER_DIR}/.venv/bin/python ${TWOMAN_SERVER_DIR}/agent.py --config ${TWOMAN_SERVER_DIR}/config.json
+ExecStart=${TWOMAN_SERVER_DIR}/twoman-helper-agent --config ${TWOMAN_SERVER_DIR}/config.json --mode agent
 Restart=always
 RestartSec=2
 LimitNOFILE=65536
@@ -206,7 +262,13 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=${TWOMAN_SERVER_DIR}/.venv/bin/python ${TWOMAN_SERVER_DIR}/agent_watchdog.py --service ${TWOMAN_AGENT_SERVICE_NAME} --fd-threshold 16384 --close-wait-threshold 2048
+ExecStart=/usr/bin/python3 ${TWOMAN_SERVER_DIR}/agent_watchdog.py --service ${TWOMAN_AGENT_SERVICE_NAME} --fd-threshold 16384 --close-wait-threshold 2048
+EOF
+)"
+
+RUNTIME_INSTALL_COMMANDS="$(cat <<EOF
+chmod 755 '${TWOMAN_SERVER_DIR}/twoman-helper-agent' '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
+/usr/bin/python3 -m py_compile '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
 EOF
 )"
 
@@ -224,21 +286,7 @@ cat > '/etc/systemd/system/${TWOMAN_WATCHDOG_SERVICE_NAME}' <<'EOF'
 ${WATCHDOG_SERVICE_CONTENT}
 EOF
 install -m 0644 '${TWOMAN_SERVER_DIR}/twoman-agent-watchdog.timer' /etc/systemd/system/${TWOMAN_WATCHDOG_TIMER_NAME}
-chmod 755 '${TWOMAN_SERVER_DIR}/install_watchdog.sh' '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
-if ! python3 -m venv --help >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
-  else
-    echo 'unable to bootstrap python virtual environments automatically' >&2
-    exit 1
-  fi
-fi
-if [ ! -d '${TWOMAN_SERVER_DIR}/.venv' ]; then
-  python3 -m venv '${TWOMAN_SERVER_DIR}/.venv'
-fi
-'${TWOMAN_SERVER_DIR}/.venv/bin/python' -m pip install --no-input -r '${TWOMAN_SERVER_DIR}/requirements.txt'
-'${TWOMAN_SERVER_DIR}/.venv/bin/python' -m py_compile '${TWOMAN_SERVER_DIR}/agent.py' '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
+${RUNTIME_INSTALL_COMMANDS}
 systemctl daemon-reload
 systemctl enable --now '${TWOMAN_AGENT_SERVICE_NAME}'
 systemctl enable --now '${TWOMAN_WATCHDOG_TIMER_NAME}'

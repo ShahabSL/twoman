@@ -15,8 +15,8 @@ reviewable, and backed by tests or clear runtime validation.
 - Use conventional commits such as `feat:`, `fix:`, `docs:`, `refactor:`,
   `test:`, and `chore:`.
 - Prefer targeted fixes over broad rewrites.
-- Keep Android and shared Python runtime behavior aligned when touching both
-  `twoman_transport.py` and the Android copy.
+- Keep Android, desktop, local CLI, and hidden-server behavior aligned when
+  touching `helper-agent/`.
 - When adding or changing deploy behavior, update the docs in the same change.
 
 ## Validation
@@ -25,14 +25,13 @@ At minimum, run the relevant focused checks for your change. Common commands:
 
 ```bash
 python3 -m unittest \
-  tests.test_transport_proxy \
   tests.test_twoman_control_cpanel \
   tests.test_twoman_control_installer \
   tests.test_twoman_control_manager \
   tests.test_desktop_client_tui
 
-bash tests/run_e2e.sh
-bash tests/run_e2e_node_http.sh
+cd helper-agent && go test ./...
+bash tests/run_e2e_go_node_http.sh
 bash tests/run_desktop_client_e2e.sh
 ```
 
@@ -45,6 +44,17 @@ For release-oriented changes, also follow
 - Mention any deployment or rollback considerations.
 - Include screenshots for UI changes.
 - Call out anything that was not tested.
+
+## Contributor recognition
+
+- Release notes should credit external contributors for merged features,
+  performance work, protocol changes, security work, and substantial reviews.
+- Prefer preserving contributor commits when a PR is merged. If a squash merge
+  is used, keep the original author in the squash commit and add
+  `Co-authored-by:` trailers when follow-up commits materially include their
+  work.
+- If a larger release branch supersedes a smaller PR, mention that clearly in
+  the release note and thank the contributor on the original PR.
 
 ## Reporting issues
 
