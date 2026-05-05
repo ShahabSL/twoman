@@ -23,6 +23,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: helper-agent/go.mod
+          cache-dependency-path: helper-agent/go.mod
 
       - name: Install Python dependencies
         run: |
@@ -90,6 +91,17 @@ jobs:
       - name: Build frozen Linux desktop client
         run: ./desktop_client/build_linux.sh
 
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Check Tauri desktop app
         run: cargo check --manifest-path desktop_app/src-tauri/Cargo.toml
 
@@ -112,6 +124,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: helper-agent/go.mod
+          cache-dependency-path: helper-agent/go.mod
 
       - name: Install Android NDK
         run: |
