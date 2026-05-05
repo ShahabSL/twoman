@@ -16,13 +16,13 @@ class TransportCipher:
         if not key:
             key = b"twoman-default-key"
         self.key = hashlib.sha256(key).digest()
-        
+
         # IV should be at least 16 bytes. If smaller, pad it.
         if len(iv) < 16:
             iv = iv.ljust(16, b'\x00')
         else:
             iv = iv[:16]
-            
+
         self.counter_base = iv
         self.block_index = 0
         self.stream_offset = 0
@@ -41,21 +41,21 @@ class TransportCipher:
         """
         if not data:
             return b""
-            
+
         data_len = len(data)
-        
+
         # Ensure we have enough keystream generated for this chunk
         while len(self.keystream_buffer) < data_len:
             self.keystream_buffer += self._generate_block()
-            
+
         # Extract exactly what we need
         chunk_keystream = self.keystream_buffer[:data_len]
         self.keystream_buffer = self.keystream_buffer[data_len:]
-        
+
         # Fast C-level XOR
         data_int = int.from_bytes(data, sys.byteorder)
         key_int = int.from_bytes(chunk_keystream, sys.byteorder)
         res_int = data_int ^ key_int
-        
+
         self.stream_offset += data_len
         return res_int.to_bytes(data_len, sys.byteorder)
