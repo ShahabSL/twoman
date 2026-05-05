@@ -48,14 +48,15 @@ fn backup_path(paths: &AppPaths) -> std::path::PathBuf {
 mod windows_impl {
     use std::{fs, path::Path};
 
-    use winreg::{enums::*, RegKey};
     use windows_sys::Win32::Networking::WinInet::{
         InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
     };
+    use winreg::{enums::*, RegKey};
 
     use super::{backup_path, AppPaths, SystemProxyBackup};
 
-    const INTERNET_SETTINGS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+    const INTERNET_SETTINGS_KEY: &str =
+        r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 
     pub fn enable(paths: &AppPaths, http_port: u16) -> Result<(), String> {
         if !backup_path(paths).exists() {

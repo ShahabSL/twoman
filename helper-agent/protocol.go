@@ -26,8 +26,8 @@ const (
 )
 
 const (
-	ModeTCP     uint8 = 1
-	FlagNone    uint8 = 0
+	ModeTCP      uint8 = 1
+	FlagNone     uint8 = 0
 	FlagDataBulk uint8 = 1
 
 	LaneCTL  = "ctl"
@@ -38,11 +38,13 @@ const (
 	// FRAME_HEADER = struct.Struct("!BBH I Q I") → 1+1+2+4+8+4 = 20 bytes
 	frameHeaderSize = 20
 
-	initialWindow     = 2 * 1024 * 1024 // 2 MB — sustains ~62 Mb/s at 260 ms RTT
-	priLimit          = 64 * 1024
-	readChunkSize     = 32 * 1024 // larger than Python's 16 KB
-	windowFlushBytes  = 64 * 1024 // flush window grants at 64 KB to keep 2 MB window topped up
-	maxReorderBytes   = 4 * 1024 * 1024
+	initialWindow               = 16 * 1024 * 1024
+	priLimit                    = 64 * 1024
+	readChunkSize               = 128 * 1024
+	downReadBufferSize          = 256 * 1024
+	windowFlushBytes            = 512 * 1024
+	maxReorderBytes             = 32 * 1024 * 1024
+	defaultMaxFramePayloadBytes = 2 * 1024 * 1024
 )
 
 var allLanes = []string{LaneCTL, LanePRI, LaneBulk}
@@ -74,11 +76,22 @@ func encodeFrame(f *Frame) []byte {
 // FrameDecoder reconstructs frames from a byte stream.
 // It accumulates bytes and emits complete frames without extra heap copies.
 type FrameDecoder struct {
-	buf []byte
-	pos int
+	buf                  []byte
+	pos                  int
+	maxFramePayloadBytes int
 }
 
-func (d *FrameDecoder) feed(data []byte) []*Frame {
+func newFrameDecoder(maxFramePayloadBytes int) *FrameDecoder {
+	if maxFramePayloadBytes <= 0 {
+		maxFramePayloadBytes = defaultMaxFramePayloadBytes
+	}
+	return &FrameDecoder{maxFramePayloadBytes: maxFramePayloadBytes}
+}
+
+func (d *FrameDecoder) feed(data []byte) ([]*Frame, error) {
+	if d.maxFramePayloadBytes <= 0 {
+		d.maxFramePayloadBytes = defaultMaxFramePayloadBytes
+	}
 	d.buf = append(d.buf[d.pos:], data...)
 	d.pos = 0
 
@@ -90,6 +103,11 @@ func (d *FrameDecoder) feed(data []byte) []*Frame {
 		}
 		base := d.pos
 		payloadLen := int(binary.BigEndian.Uint32(d.buf[base+16 : base+20]))
+		if payloadLen > d.maxFramePayloadBytes {
+			d.buf = nil
+			d.pos = 0
+			return nil, fmt.Errorf("frame payload too large: %d > %d", payloadLen, d.maxFramePayloadBytes)
+		}
 		total := frameHeaderSize + payloadLen
 		if avail < total {
 			break
@@ -110,7 +128,7 @@ func (d *FrameDecoder) feed(data []byte) []*Frame {
 		d.buf = append([]byte(nil), d.buf[d.pos:]...)
 		d.pos = 0
 	}
-	return frames
+	return frames, nil
 }
 
 // --- Payload helpers (mirror twoman_protocol.py) ---

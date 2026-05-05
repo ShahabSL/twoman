@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -63,6 +64,31 @@ def _command_for(subcommand: str, *extra: str) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, subcommand, *extra]
     return [sys.executable, "-m", "desktop_client", subcommand, *extra]
+
+
+def _helper_command(config_path: Path) -> tuple[list[str], Path]:
+    configured = os.environ.get("TWOMAN_HELPER_AGENT_BINARY")
+    if configured:
+        helper_binary = Path(configured)
+        if not helper_binary.exists():
+            raise RuntimeError(f"TWOMAN_HELPER_AGENT_BINARY does not exist: {helper_binary}")
+        return [str(helper_binary), "--mode", "helper", "--config", str(config_path)], helper_binary.parent
+
+    if getattr(sys, "frozen", False):
+        suffix = ".exe" if sys.platform == "win32" else ""
+        helper_binary = Path(sys.executable).with_name(f"twoman-helper-agent{suffix}")
+        if not helper_binary.exists():
+            raise RuntimeError(f"Missing packaged Go helper sidecar: {helper_binary}")
+        return [str(helper_binary), "--mode", "helper", "--config", str(config_path)], helper_binary.parent
+
+    go_binary = shutil.which("go")
+    if not go_binary:
+        raise RuntimeError("Go is required to run the source desktop TUI helper")
+    repo_root = Path(__file__).resolve().parents[1]
+    helper_agent_dir = repo_root / "helper-agent"
+    if not (helper_agent_dir / "go.mod").exists():
+        raise RuntimeError(f"Missing Go helper-agent source: {helper_agent_dir}")
+    return [go_binary, "run", ".", "--mode", "helper", "--config", str(config_path)], helper_agent_dir
 
 
 def _read_tail(path: Path, limit: int = 20) -> str:
@@ -142,10 +168,10 @@ class HelperProcessManager:
             self.stop()
         config = profile.to_runtime_config(str(self.paths.helper_log_file))
         _write_json(self.paths.helper_config_file, config)
-        command = _command_for("helper-run", "--config", str(self.paths.helper_config_file))
+        command, cwd = _helper_command(self.paths.helper_config_file)
         process = subprocess.Popen(
             command,
-            cwd=str(Path(__file__).resolve().parents[1]),
+            cwd=str(cwd),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -240,4 +266,3 @@ class ShareProcessManager:
         _wait_for_port(probe_host, share.listen_port, False, 5)
         self.paths.share_state_file(share.id).unlink(missing_ok=True)
         return self.status(share)
-

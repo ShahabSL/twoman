@@ -75,19 +75,19 @@ func browserHeaders(userAgent, brokerBaseURL string) map[string]string {
 			platform = `"Linux"`
 		}
 
-		h["Sec-CH-UA"]          = brand
-		h["Sec-CH-UA-Mobile"]   = "?0"
+		h["Sec-CH-UA"] = brand
+		h["Sec-CH-UA-Mobile"] = "?0"
 		h["Sec-CH-UA-Platform"] = platform
-		h["Sec-Fetch-Dest"]     = "empty"
-		h["Sec-Fetch-Mode"]     = "cors"
-		h["Sec-Fetch-Site"]     = "same-origin"
+		h["Sec-Fetch-Dest"] = "empty"
+		h["Sec-Fetch-Mode"] = "cors"
+		h["Sec-Fetch-Site"] = "same-origin"
 	}
 
 	h["Cache-Control"] = "no-cache"
-	h["Pragma"]        = "no-cache"
+	h["Pragma"] = "no-cache"
 
 	if origin != "" {
-		h["Origin"]  = origin
+		h["Origin"] = origin
 		h["Referer"] = referer
 	}
 
@@ -117,10 +117,10 @@ var templateFieldRe = regexp.MustCompile(`\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
 // routeProvider builds lane URLs from a base URL + route template,
 // matching the Python RouteProvider class.
 type routeProvider struct {
-	baseURL  string
-	route    string // e.g. "/{lane}/{direction}"
-	wsRoute  string // e.g. "/{lane}"
-	health   string // e.g. "/health"
+	baseURL string
+	route   string // e.g. "/{lane}/{direction}"
+	wsRoute string // e.g. "/{lane}"
+	health  string // e.g. "/health"
 }
 
 func newRouteProvider(baseURL, routeTemplate, wsTemplate, healthTemplate string) *routeProvider {
@@ -195,10 +195,10 @@ func renderTemplate(tmpl string, ctx map[string]string) string {
 
 // Default identity cookie names, matching Python DEFAULT_IDENTITY_COOKIE_NAMES
 var defaultCookieNames = map[string]string{
-	"role":    "_cf_role",
-	"peer":    "_cf_lspa",
-	"session": "_wp_syncId",
-	"auth":    "_cfauth",
+	"role":    "twoman_role",
+	"peer":    "twoman_peer",
+	"session": "twoman_session",
+	"auth":    "twoman_auth",
 }
 
 func cookieNames(cfg *Config) map[string]string {

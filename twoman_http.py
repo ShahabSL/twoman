@@ -15,10 +15,10 @@ DEFAULT_WS_ROUTE_TEMPLATE = "/{lane}"
 DEFAULT_HEALTH_TEMPLATE = "/health"
 DEFAULT_AUTH_MODE = "bearer"
 DEFAULT_IDENTITY_COOKIE_NAMES = {
-    "role": "_cf_role",
-    "peer": "_cf_lspa",
-    "session": "_wp_syncId",
-    "auth": "_cfauth",
+    "role": "twoman_role",
+    "peer": "twoman_peer",
+    "session": "twoman_session",
+    "auth": "twoman_auth",
 }
 _TEMPLATE_FIELD_PATTERN = re.compile(r"{([a-zA-Z_][a-zA-Z0-9_]*)}")
 
@@ -141,6 +141,7 @@ def httpx_proxy_kwargs(proxy_url, *, async_client=False):
         return {"proxy": normalized}
     if "proxies" in parameters:
         return {"proxies": normalized}
+    # Fall back to the current API if the runtime hides its signature.
     return {"proxy": normalized}
 
 

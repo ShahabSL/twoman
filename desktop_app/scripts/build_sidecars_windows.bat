@@ -17,29 +17,23 @@ mkdir "%DIST_DIR%" 2>nul
 mkdir "%STAGE_DIR%"
 mkdir "%TUNNEL_DIR%"
 
+where go >nul 2>nul
+if errorlevel 1 (
+  echo go is required to build the Twoman Go helper sidecar
+  exit /b 1
+)
+
+pushd "%ROOT%\helper-agent"
+go build -trimpath -ldflags "-s -w" -o "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" .
+if errorlevel 1 exit /b 1
+popd
+
 if "%TWOMAN_WINDOWS_PYTHON%"=="" (
   set TWOMAN_WINDOWS_PYTHON=py -3
 )
 
 %TWOMAN_WINDOWS_PYTHON% -m pip install --upgrade pip wheel >nul
 %TWOMAN_WINDOWS_PYTHON% -m pip install -r "%ROOT%\requirements.txt" pyinstaller >nul
-
-%TWOMAN_WINDOWS_PYTHON% -m PyInstaller ^
-  --noconfirm ^
-  --clean ^
-  --onefile ^
-  --noconsole ^
-  --name %TWOMAN_HELPER_BINARY_BASENAME% ^
-  --paths "%ROOT%" ^
-  --hidden-import local_client.helper ^
-  --hidden-import twoman_protocol ^
-  --hidden-import twoman_transport ^
-  --distpath "%STAGE_DIR%" ^
-  --workpath "%BUILD_ROOT%\work-helper" ^
-  --specpath "%BUILD_ROOT%\spec-helper" ^
-  "%ROOT%\local_client\helper.py"
-
-copy /Y "%STAGE_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" >nul
 
 %TWOMAN_WINDOWS_PYTHON% -m PyInstaller ^
   --noconfirm ^

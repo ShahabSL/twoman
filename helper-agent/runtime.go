@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -44,7 +45,10 @@ type dnsCacheEntry struct {
 }
 
 func newHelperRuntime(cfg *Config) (*helperRuntime, error) {
-	peerID := randomPeerID()
+	peerID := cfg.PeerID
+	if peerID == "" {
+		peerID = randomPeerID()
+	}
 	rt := &helperRuntime{
 		cfg:      cfg,
 		streams:  make(map[uint32]*ProxyStream),
@@ -53,17 +57,36 @@ func newHelperRuntime(cfg *Config) (*helperRuntime, error) {
 		dnsSem:   make(chan struct{}, 8), // max 8 concurrent DNS queries
 	}
 	// Seed nextDNSID with a random even number (matching Python: dns_seed & 0x7FFFFFFE)
-	rt.nextDNSID = 2
+	var seed [4]byte
+	if _, err := rand.Read(seed[:]); err == nil {
+		rt.nextDNSID = binary.BigEndian.Uint32(seed[:]) & 0x7FFFFFFE
+	}
+	if rt.nextDNSID == 0 {
+		rt.nextDNSID = 2
+	}
 	rt.transport = newLaneTransport(cfg, "helper", peerID, rt.onFrame)
 	return rt, nil
 }
 
 func (rt *helperRuntime) start(ctx context.Context) error {
-	rt.transport.start()
-	return nil
+	return rt.transport.start(ctx)
 }
 
 func (rt *helperRuntime) stop() {
+	rt.streamsMu.Lock()
+	streams := make([]*ProxyStream, 0, len(rt.streams))
+	for _, stream := range rt.streams {
+		streams = append(streams, stream)
+	}
+	rt.streams = make(map[uint32]*ProxyStream)
+	rt.streamsMu.Unlock()
+
+	for _, stream := range streams {
+		stream.reset("helper stopped")
+	}
+	if len(streams) > 0 {
+		time.Sleep(250 * time.Millisecond)
+	}
 	rt.transport.stop()
 }
 
@@ -103,11 +126,11 @@ func (rt *helperRuntime) onFrame(f *Frame, lane string) {
 // ---- DNS relay -------------------------------------------------------------
 
 const (
-	dnsQueryTimeout  = 2500 * time.Millisecond
-	dnsCacheTTL      = 60 * time.Second
-	dnsCacheMaxSize  = 256
-	dnsTypeAAAA      = 28
-	dnsTypeHTTPS     = 65
+	dnsQueryTimeout = 2500 * time.Millisecond
+	dnsCacheTTL     = 60 * time.Second
+	dnsCacheMaxSize = 256
+	dnsTypeAAAA     = 28
+	dnsTypeHTTPS    = 65
 )
 
 // resolveDNS sends a DNS query payload through the relay and returns the response.
@@ -177,11 +200,13 @@ func (rt *helperRuntime) queryDNSTransport(targetHost string, payload []byte) ([
 	if err != nil {
 		return nil, err
 	}
-	rt.transport.sendFrame(LanePRI, &Frame{
+	if err := rt.transport.sendFrame(LanePRI, &Frame{
 		TypeID:   FrameDNSQuery,
 		StreamID: reqID,
 		Payload:  framePayload,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	select {
 	case result := <-ch:
@@ -407,4 +432,3 @@ func (a *socksUDPAssoc) handlePacket(pkt []byte, addr *net.UDPAddr) {
 	out := buildSocksUDPPacket(host, port, resp)
 	a.conn.WriteToUDP(out, addr) //nolint:errcheck
 }
-

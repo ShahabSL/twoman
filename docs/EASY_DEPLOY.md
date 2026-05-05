@@ -145,7 +145,7 @@ sudo bash scripts/install_twoman.sh \
   --cpanel-username cpanel-user \
   --cpanel-password cpanel-password \
   --cpanel-home /home/cpanel-user \
-  --backend passenger_python \
+  --backend cloudlinux_node_selector \
   --hidden-upstream-proxy-url socks5h://127.0.0.1:1280 \
   --hidden-upstream-proxy-label wireproxy \
   --hidden-outbound-proxy-url socks5h://127.0.0.1:1280 \
@@ -166,8 +166,8 @@ Useful flags:
 The installer checks the public host and ranks backends in this order:
 
 1. `cloudlinux_node_selector`
-2. `passenger_python`
-3. `cpanel_runtime_bridge`
+2. `cpanel_runtime_bridge`
+3. `passenger_python`
 
 If multiple backends are available, the highest-ranked one is suggested as the
 default. The detected capabilities are stored in the install state and can be

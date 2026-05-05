@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// Config mirrors the fields understood by twoman_transport.py / helper.py.
+// Config is shared by the Go helper and hidden agent dataplane.
 // All fields are optional; SetDefaults fills sensible values.
 type Config struct {
 	BrokerBaseURL   string `json:"broker_base_url"`
@@ -20,27 +20,36 @@ type Config struct {
 	ListenHost      string `json:"listen_host"`
 	HTTPListenPort  int    `json:"http_listen_port"`
 	SOCKSListenPort int    `json:"socks_listen_port"`
+	ListenStatePath string `json:"listen_state_path"`
+	PeerID          string `json:"peer_id"`
 
-	HTTPTimeoutSeconds           float64 `json:"http_timeout_seconds"`
-	HeartbeatIntervalSeconds     float64 `json:"heartbeat_interval_seconds"`
-	DownReadTimeoutSeconds       float64 `json:"down_read_timeout_seconds"`
-	DownStreamMaxSessionSeconds  float64 `json:"down_stream_max_session_seconds"`
-	IntervalJitterRatio          float64 `json:"interval_jitter_ratio"`
-	BackoffInitialDelaySeconds   float64 `json:"backoff_initial_delay_seconds"`
-	BackoffMaxDelaySeconds       float64 `json:"backoff_max_delay_seconds"`
-	FlushDelaySeconds            float64 `json:"flush_delay_seconds"`
-	MaxBatchBytes                int     `json:"max_batch_bytes"`
+	HTTPTimeoutSeconds          float64 `json:"http_timeout_seconds"`
+	HeartbeatIntervalSeconds    float64 `json:"heartbeat_interval_seconds"`
+	DownReadTimeoutSeconds      float64 `json:"down_read_timeout_seconds"`
+	DownStreamMaxSessionSeconds float64 `json:"down_stream_max_session_seconds"`
+	IntervalJitterRatio         float64 `json:"interval_jitter_ratio"`
+	BackoffInitialDelaySeconds  float64 `json:"backoff_initial_delay_seconds"`
+	BackoffMaxDelaySeconds      float64 `json:"backoff_max_delay_seconds"`
+	FlushDelaySeconds           float64 `json:"flush_delay_seconds"`
+	MaxBatchBytes               int     `json:"max_batch_bytes"`
+	MaxFramePayloadBytes        int     `json:"max_frame_payload_bytes"`
+	SendQueueTimeoutSeconds     float64 `json:"send_queue_timeout_seconds"`
 
-	VPNPreferIPv4    bool `json:"vpn_prefer_ipv4"`
-	VPNFilterAAAA    bool `json:"vpn_filter_aaaa"`
+	VPNPreferIPv4     bool `json:"vpn_prefer_ipv4"`
+	VPNFilterAAAA     bool `json:"vpn_filter_aaaa"`
 	EnforceConnectSNI bool `json:"enforce_connect_sni"`
 
 	// {"ctl": false, "data": false} or just a bool
 	HTTP2Enabled interface{} `json:"http2_enabled"`
 
-	UpstreamProxyURL string `json:"upstream_proxy_url"`
-	Transport        string `json:"transport"`
-	TransportProfile string `json:"transport_profile"`
+	UpstreamProxyURL string                           `json:"upstream_proxy_url"`
+	OutboundProxyURL string                           `json:"outbound_proxy_url"`
+	Transport        string                           `json:"transport"`
+	TransportProfile string                           `json:"transport_profile"`
+	UploadProfiles   map[string]UploadProfileOverride `json:"upload_profiles"`
+	UpWorkers        map[string]int                   `json:"up_workers"`
+	DownParallelism  map[string]int                   `json:"down_parallelism"`
+	DownLanes        []string                         `json:"down_lanes"`
 
 	// Identity cookie names (optional overrides)
 	IdentityCookieNames map[string]string `json:"identity_cookie_names"`
@@ -50,10 +59,34 @@ type Config struct {
 	UserAgent string `json:"user_agent"`
 
 	LegacyCustomHeadersEnabled bool `json:"legacy_custom_headers_enabled"`
+	VerifyTLS                  bool `json:"verify_tls"`
 
 	// Internal: populated after parsing
-	http2CtlEnabled  bool
-	http2DataEnabled bool
+	http2CtlEnabled      bool
+	http2DataEnabled     bool
+	enforceConnectSNISet bool
+	verifyTLSSet         bool
+}
+
+type UploadProfileOverride struct {
+	MaxBatchBytes     int      `json:"max_batch_bytes"`
+	FlushDelaySeconds *float64 `json:"flush_delay_seconds"`
+}
+
+func (c *Config) UnmarshalJSON(data []byte) error {
+	type alias Config
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*c = Config(decoded)
+	_, c.enforceConnectSNISet = raw["enforce_connect_sni"]
+	_, c.verifyTLSSet = raw["verify_tls"]
+	return nil
 }
 
 func (c *Config) SetDefaults() {
@@ -93,6 +126,12 @@ func (c *Config) SetDefaults() {
 	if c.MaxBatchBytes == 0 {
 		c.MaxBatchBytes = 65536
 	}
+	if c.MaxFramePayloadBytes == 0 {
+		c.MaxFramePayloadBytes = defaultMaxFramePayloadBytes
+	}
+	if c.SendQueueTimeoutSeconds == 0 {
+		c.SendQueueTimeoutSeconds = 5
+	}
 	if c.BinaryMediaType == "" {
 		c.BinaryMediaType = "image/webp"
 	}
@@ -108,8 +147,12 @@ func (c *Config) SetDefaults() {
 	if c.AuthMode == "" {
 		c.AuthMode = "bearer"
 	}
-	// Defaults match config.json: enforce_connect_sni defaults true
-	// (zero value is false so we must check actual config)
+	if !c.enforceConnectSNISet {
+		c.EnforceConnectSNI = true
+	}
+	if !c.verifyTLSSet {
+		c.VerifyTLS = true
+	}
 
 	// Parse http2_enabled
 	switch v := c.HTTP2Enabled.(type) {

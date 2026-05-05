@@ -24,8 +24,9 @@ TWOMAN_LOG_PATH="${TWOMAN_LOG_PATH:-${TWOMAN_LOG_DIR%/}/helper.log}"
 TWOMAN_LISTEN_STATE_PATH="${TWOMAN_LISTEN_STATE_PATH:-local_client/runtime/listen-state.json}"
 TWOMAN_IDLE_REPOLL_CTL="${TWOMAN_IDLE_REPOLL_CTL:-0.05}"
 TWOMAN_IDLE_REPOLL_DATA="${TWOMAN_IDLE_REPOLL_DATA:-0.1}"
-TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-65536}"
-TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-0.004}"
+TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-524288}"
+TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-0.006}"
+TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-8}"
 TWOMAN_AUTH_MODE="${TWOMAN_AUTH_MODE:-bearer}"
 TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED="${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED:-false}"
 TWOMAN_BINARY_MEDIA_TYPE="${TWOMAN_BINARY_MEDIA_TYPE:-image/webp}"
@@ -79,6 +80,9 @@ if [ ! -f "${CONFIG_PATH}" ]; then
       "flush_delay_seconds": ${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS}
     }
   },
+  "up_workers": {
+    "data": ${TWOMAN_DATA_UP_WORKERS}
+  },
   "streaming_up_lanes": ${STREAMING_UP_JSON},
   "idle_repoll_delay_seconds": {
     "ctl": ${TWOMAN_IDLE_REPOLL_CTL},
@@ -92,10 +96,16 @@ if [ ! -f "${CONFIG_PATH}" ]; then
 EOF
 fi
 
-python3 -m pip install -r requirements.txt
 mkdir -p "$(dirname "${TWOMAN_LOG_PATH}")"
 echo "Local helper log: ${TWOMAN_LOG_PATH}" >&2
+if ! command -v go >/dev/null 2>&1; then
+  echo "go is required to build the Twoman client runtime" >&2
+  exit 1
+fi
+GO_HELPER_BIN="${TWOMAN_GO_HELPER_BIN:-local_client/runtime/twoman-helper-agent}"
+GO_HELPER_BIN="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "${GO_HELPER_BIN}")"
+mkdir -p "$(dirname "${GO_HELPER_BIN}")"
+(cd helper-agent && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${GO_HELPER_BIN}" .)
 exec env \
   TWOMAN_TRACE="${TWOMAN_TRACE}" \
-  TWOMAN_LOG_PATH="${TWOMAN_LOG_PATH}" \
-  python3 local_client/helper.py --config "${CONFIG_PATH}"
+  "${GO_HELPER_BIN}" --config "${CONFIG_PATH}" --mode helper

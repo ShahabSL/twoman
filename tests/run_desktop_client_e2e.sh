@@ -8,25 +8,49 @@ STATE_DIR="$TMP_DIR/state"
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR" "$ROOT/tests/certs"
 
+if [ ! -d "$ROOT/host/node_selector/node_modules/ws" ]; then
+  (
+    cd "$ROOT/host/node_selector"
+    npm ci >/dev/null
+  )
+fi
+
+(
+  cd "$ROOT/helper-agent"
+  go build -trimpath -ldflags "-s -w" -o "$TMP_DIR/twoman-helper-agent" .
+)
+
 cat > "$TMP_DIR/broker-config.json" <<'JSON'
 {
   "client_tokens": ["test-client-token"],
   "agent_tokens": ["test-agent-token"],
-  "session_ttl_seconds": 300,
+  "binary_media_type": "image/webp",
   "peer_ttl_seconds": 90,
   "stream_ttl_seconds": 300,
-  "max_lane_bytes": 16777216
+  "max_lane_bytes": 16777216,
+  "max_peer_buffered_bytes": 33554432,
+  "max_frame_payload_bytes": 2097152,
+  "down_wait_ms": { "ctl": 75, "data": 75 },
+  "helper_down_combined_data_lane": true,
+  "agent_down_combined_data_lane": true,
+  "streaming_data_down_helper": true,
+  "streaming_data_down_agent": true,
+  "base_uri": "/api/v1/telemetry"
 }
 JSON
 
 cat > "$TMP_DIR/agent.json" <<'JSON'
 {
-  "broker_base_url": "http://127.0.0.1:18093",
+  "broker_base_url": "http://127.0.0.1:18093/api/v1/telemetry",
   "agent_token": "test-agent-token",
+  "auth_mode": "bearer",
+  "binary_media_type": "image/webp",
+  "route_template": "/{lane}/{direction}",
+  "health_template": "/health",
   "peer_id": "agent-test",
   "http_timeout_seconds": 10,
   "flush_delay_seconds": 0.01,
-  "max_batch_bytes": 65536,
+  "max_batch_bytes": 131072,
   "http2_enabled": {
     "ctl": false,
     "data": false
@@ -66,10 +90,7 @@ PY
 trap cleanup EXIT
 PIDS=()
 
-PYTHONPATH="$ROOT" python3 "$ROOT/host/runtime/http_broker_daemon.py" \
-  --listen-host 127.0.0.1 \
-  --listen-port 18093 \
-  --config "$TMP_DIR/broker-config.json" \
+PORT=18093 TWOMAN_TRACE=1 TWOMAN_DEBUG_STATS=1 TWOMAN_CONFIG_PATH="$TMP_DIR/broker-config.json" node "$ROOT/host/node_selector/broker.js" \
   >"$TMP_DIR/broker.log" 2>&1 &
 PIDS+=($!)
 
@@ -79,7 +100,7 @@ PIDS+=($!)
 python3 "$ROOT/tests/tls_origin_server.py" >"$TMP_DIR/tls.log" 2>&1 &
 PIDS+=($!)
 
-python3 "$ROOT/hidden_server/agent.py" --config "$TMP_DIR/agent.json" >"$TMP_DIR/agent.log" 2>&1 &
+"$TMP_DIR/twoman-helper-agent" --mode agent --config "$TMP_DIR/agent.json" >"$TMP_DIR/agent.log" 2>&1 &
 PIDS+=($!)
 
 wait_for_port() {
@@ -124,7 +145,7 @@ paths = DesktopPaths(Path(Path.cwd() / "tests" / "tmp-desktop" / "state")).ensur
 controller = DesktopController(paths)
 profile = ClientProfile(
     name="Desktop test",
-    broker_base_url="http://127.0.0.1:18093",
+    broker_base_url="http://127.0.0.1:18093/api/v1/telemetry",
     client_token="test-client-token",
     http_port=28081,
     socks_port=21081,
@@ -173,4 +194,3 @@ curl --fail --silent --show-error --insecure \
 grep -q 'secure:/secure-test?via=desktop-share' "$TMP_DIR/desktop-share-secure.txt"
 
 echo "TWOMAN DESKTOP E2E OK"
-

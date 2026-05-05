@@ -103,9 +103,7 @@ Cloudflare note:
 
 Copy these files to the hidden server, for example under `/opt/twoman`:
 
-- `twoman_protocol.py`
-- `twoman_transport.py`
-- `hidden_server/agent.py`
+- `twoman-helper-agent` built from `helper-agent/`
 - `hidden_server/agent_watchdog.py`
 - `hidden_server/install_watchdog.sh`
 - `hidden_server/systemd/twoman-agent-watchdog.service`
@@ -173,12 +171,12 @@ Use broker lane profiles close to:
 
 - `ctl`: `4096` bytes / `8` frames / `1ms` / `pad_min 1024`
 - `pri`: `32768` bytes / `16` frames / `2ms` / `pad_min 1024`
-- `bulk`: `262144` bytes / `64` frames / `4ms` / `pad_min 0`
+- `bulk`: `1048576` bytes / `128` frames / `4ms` / `pad_min 0`
 
 ### Start agent directly
 
 ```bash
-python3 /opt/twoman/agent.py --config /opt/twoman/config.json
+/opt/twoman/twoman-helper-agent --mode agent --config /opt/twoman/config.json
 ```
 
 ### Install as a service
@@ -194,9 +192,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/twoman
-Environment=PYTHONUNBUFFERED=1
 Environment=TWOMAN_TRACE=0
-ExecStart=/usr/bin/python3 /opt/twoman/agent.py --config /opt/twoman/config.json
+ExecStart=/opt/twoman/twoman-helper-agent --mode agent --config /opt/twoman/config.json
 Restart=always
 RestartSec=2
 LimitNOFILE=65536
@@ -249,16 +246,10 @@ Example:
 }
 ```
 
-Install dependency:
+Run helper with the Go dataplane:
 
 ```bash
-python3 -m pip install -r requirements.txt
-```
-
-Run helper:
-
-```bash
-python3 local_client/helper.py --config local_client/config.json
+scripts/start_client.sh local_client/config.json
 ```
 
 Stop helper:
@@ -298,7 +289,7 @@ If the host script path fails:
 
 - verify file upload permissions in cPanel File Manager
 - verify the configured application-server route serves `/health` relative to the public broker base URI
-- verify `/bin/python3` exists on the host
+- verify `/bin/python3` exists on the host when using the bridge backend
 - verify `api.php?action=health` returns `ok`
 
 If the hidden server fails:
@@ -310,7 +301,7 @@ If the hidden server fails:
 
 If the local helper fails:
 
-- verify `python3 -m pip install -r requirements.txt`
+- verify `go version` works and `helper-agent/` builds
 - verify the ports are free:
   - `18092`
   - `11092`

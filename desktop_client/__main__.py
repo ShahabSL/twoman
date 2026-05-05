@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
+import subprocess
 from pathlib import Path
 from typing import Sequence
 
+from desktop_client.runtime import _helper_command
 from desktop_client.socks_gateway import run_gateway_from_config
 
 
 def _run_helper(config_path: str) -> int:
-    from local_client.helper import configure_runtime_logging, load_config, main_async
-
-    config = load_config(config_path)
-    configure_runtime_logging(config_path, config)
-    asyncio.run(main_async(config))
-    return 0
+    command, cwd = _helper_command(Path(config_path))
+    return subprocess.call(command, cwd=str(cwd))
 
 
 def _run_tui() -> int:

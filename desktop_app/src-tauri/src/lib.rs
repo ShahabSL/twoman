@@ -5,8 +5,8 @@ pub mod system_proxy;
 
 use models::{ClientProfile, ConnectionMode, DesktopSnapshot, SharedProxy};
 use runtime::DesktopRuntime;
-use storage::AppPaths;
 use std::sync::Arc;
+use storage::AppPaths;
 use tauri::{Manager, State};
 
 #[tauri::command]

@@ -50,7 +50,7 @@ type ProxyStream struct {
 	windowFlushAt time.Time
 
 	// State
-	closed     int32        // atomic bool
+	closed     int32 // atomic bool
 	closeOnce  sync.Once
 	doneCh     chan struct{} // closed once when stream is torn down
 	sendClosed bool
@@ -97,7 +97,9 @@ func (s *ProxyStream) open(ctx context.Context) error {
 		StreamID: s.id,
 		Payload:  makeOpenPayload(s.targetHost, s.targetPort),
 	}
-	s.rt.transport.sendFrame(s.controlLane(), frame)
+	if err := s.rt.transport.sendFrame(s.controlLane(), frame); err != nil {
+		return err
+	}
 
 	select {
 	case err := <-s.openCh:
@@ -171,7 +173,7 @@ func (s *ProxyStream) onFrame(f *Frame) {
 				if ok {
 					s.pendingBytes -= len(existing)
 				}
-				s.recvPending[rawOffset] = append([]byte{}, payload...)
+				s.recvPending[rawOffset] = payload
 				s.pendingBytes += len(payload)
 			}
 			s.reorderMu.Unlock()
@@ -204,11 +206,12 @@ func (s *ProxyStream) onFrame(f *Frame) {
 // Caller must hold reorderMu.
 func (s *ProxyStream) acceptInOrder(payload []byte) {
 	s.recvOffset += uint64(len(payload))
-	p := append([]byte{}, payload...)
-	s.recvDataBytes += int64(len(p))
+	s.recvDataBytes += int64(len(payload))
 	select {
-	case s.recvCh <- p:
+	case s.recvCh <- payload:
 	case <-s.doneCh:
+	default:
+		go s.reset("receive buffer full")
 	}
 }
 
@@ -250,14 +253,27 @@ func (s *ProxyStream) sendData(ctx context.Context, payload []byte) error {
 		// Wait for credit.
 		s.sendCreditMu.Lock()
 		for s.sendCredit <= 0 && !s.isClosed() {
-			s.sendCreditCond.Wait()
+			s.sendCreditMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-s.doneCh:
+				return fmt.Errorf("stream closed")
+			case <-time.After(50 * time.Millisecond):
+			}
+			s.sendCreditMu.Lock()
 		}
 		if s.isClosed() {
 			s.sendCreditMu.Unlock()
 			return fmt.Errorf("stream closed")
 		}
 		chunkLen := int64(len(view))
-		if int64(readChunkSize) < chunkLen {
+		if s.sendOffset < priLimit {
+			priRemaining := int64(priLimit - s.sendOffset)
+			if priRemaining < chunkLen {
+				chunkLen = priRemaining
+			}
+		} else if int64(readChunkSize) < chunkLen {
 			chunkLen = readChunkSize
 		}
 		if s.sendCredit < chunkLen {
@@ -275,13 +291,18 @@ func (s *ProxyStream) sendData(ctx context.Context, payload []byte) error {
 			flags = FlagDataBulk
 		}
 
-		s.rt.transport.sendFrame(lane, &Frame{
+		if err := s.rt.transport.sendFrame(lane, &Frame{
 			TypeID:   FrameData,
 			Flags:    flags,
 			StreamID: s.id,
 			Offset:   s.sendOffset,
 			Payload:  append([]byte{}, chunk...),
-		})
+		}); err != nil {
+			s.sendCreditMu.Lock()
+			s.sendCredit += chunkLen
+			s.sendCreditMu.Unlock()
+			return err
+		}
 		s.sendOffset += uint64(chunkLen)
 		atomic.AddInt64(&s.sendDataBytes, chunkLen)
 		view = view[chunkLen:]
@@ -298,7 +319,7 @@ func (s *ProxyStream) finish() {
 	}
 	s.sendClosed = true
 	s.flushWindow()
-	s.rt.transport.sendFrame(s.controlLane(), &Frame{
+	_ = s.rt.transport.sendFrame(s.controlLane(), &Frame{
 		TypeID:   FrameFIN,
 		StreamID: s.id,
 		Offset:   s.sendOffset,
@@ -311,7 +332,7 @@ func (s *ProxyStream) reset(reason string) {
 		return
 	}
 	s.setClosed()
-	s.rt.transport.sendFrame(s.controlLane(), &Frame{
+	_ = s.rt.transport.sendFrame(s.controlLane(), &Frame{
 		TypeID:   FrameRST,
 		StreamID: s.id,
 		Payload:  makeErrorPayload(reason),
@@ -325,13 +346,14 @@ func (s *ProxyStream) grantWindow(n int) {
 	}
 	s.windowMu.Lock()
 	s.pendingWindow += int64(n)
-	flush := s.pendingWindow >= windowFlushBytes || time.Now().After(s.windowFlushAt)
+	now := time.Now()
+	flush := s.pendingWindow >= windowFlushBytes || (!s.windowFlushAt.IsZero() && now.After(s.windowFlushAt))
 	if flush {
 		s.flushWindowLocked()
 	} else {
 		// Schedule a delayed flush if not already scheduled.
 		if s.windowFlushAt.IsZero() {
-			s.windowFlushAt = time.Now().Add(windowFlushDelay)
+			s.windowFlushAt = now.Add(windowFlushDelay)
 			go func() {
 				time.Sleep(windowFlushDelay)
 				s.windowMu.Lock()
@@ -357,7 +379,7 @@ func (s *ProxyStream) flushWindowLocked() {
 	v := s.pendingWindow
 	s.pendingWindow = 0
 	s.windowFlushAt = time.Time{}
-	s.rt.transport.sendFrame(s.controlLane(), &Frame{
+	_ = s.rt.transport.sendFrame(s.controlLane(), &Frame{
 		TypeID:   FrameWindow,
 		StreamID: s.id,
 		Offset:   uint64(v),

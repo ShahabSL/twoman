@@ -7,12 +7,13 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	agentDNSTimeout    = 2500 * time.Millisecond
+	agentDNSTimeout     = 2500 * time.Millisecond
 	agentDNSMaxInFlight = 8
 )
 
@@ -21,7 +22,7 @@ const (
 //   - accepts FRAME_OPEN from the helper and dials the requested origin
 //   - answers FRAME_DNS_QUERY by resolving DNS and returning FRAME_DNS_RESPONSE
 //
-// It is the Go equivalent of agent.py's AgentRuntime.
+// It owns the hidden-server side of the Go dataplane.
 type agentRuntime struct {
 	cfg       *Config
 	transport *laneTransport
@@ -31,28 +32,51 @@ type agentRuntime struct {
 
 	// Semaphore: limits concurrent DNS resolutions.
 	dnsSem chan struct{}
+
+	originDialer *net.Dialer
 }
 
 func newAgentRuntime(cfg *Config) (*agentRuntime, error) {
-	peerID := randomPeerID()
+	peerID := cfg.PeerID
+	if peerID == "" {
+		peerID = randomPeerID()
+	}
 	rt := &agentRuntime{
 		cfg:     cfg,
 		streams: make(map[uint32]*AgentStream),
 		dnsSem:  make(chan struct{}, agentDNSMaxInFlight),
+		originDialer: &net.Dialer{
+			Timeout:   12 * time.Second,
+			KeepAlive: 30 * time.Second,
+		},
 	}
 	rt.transport = newLaneTransport(cfg, "agent", peerID, rt.onFrame)
 	return rt, nil
 }
 
-func (rt *agentRuntime) start(_ context.Context) error {
-	rt.transport.start()
+func (rt *agentRuntime) dialOrigin(ctx context.Context, network, address string) (net.Conn, error) {
+	if strings.TrimSpace(rt.cfg.OutboundProxyURL) == "" {
+		return rt.originDialer.DialContext(ctx, network, address)
+	}
+	dialContext, ok, err := newProxyDialContext(rt.cfg.OutboundProxyURL, rt.originDialer)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return rt.originDialer.DialContext(ctx, network, address)
+	}
+	return dialContext(ctx, network, address)
+}
+
+func (rt *agentRuntime) start(ctx context.Context) error {
+	if err := rt.transport.start(ctx); err != nil {
+		return err
+	}
 	log.Printf("[agent] started peer=%s broker=%s", rt.transport.peerLabel, rt.cfg.BrokerBaseURL)
 	return nil
 }
 
 func (rt *agentRuntime) stop() {
-	rt.transport.stop()
-
 	rt.streamsMu.Lock()
 	streams := make([]*AgentStream, 0, len(rt.streams))
 	for _, s := range rt.streams {
@@ -62,11 +86,15 @@ func (rt *agentRuntime) stop() {
 	rt.streamsMu.Unlock()
 
 	for _, s := range streams {
-		s.setClosed()
+		s.reset("agent stopped")
 		if s.conn != nil {
 			s.conn.Close()
 		}
 	}
+	if len(streams) > 0 {
+		time.Sleep(250 * time.Millisecond)
+	}
+	rt.transport.stop()
 }
 
 func (rt *agentRuntime) releaseStream(id uint32) {
@@ -81,10 +109,10 @@ func (rt *agentRuntime) onFrame(f *Frame, _ string) {
 	case FrameOpen:
 		host, port, err := parseOpenPayload(f.Payload)
 		if err != nil {
-			rt.transport.sendFrame(rt.transport.streamControlLane, &Frame{
-				TypeID:  FrameOpenFail,
+			_ = rt.transport.sendFrame(rt.transport.streamControlLane, &Frame{
+				TypeID:   FrameOpenFail,
 				StreamID: f.StreamID,
-				Payload: makeErrorPayload("bad OPEN payload: " + err.Error()),
+				Payload:  makeErrorPayload("bad OPEN payload: " + err.Error()),
 			})
 			return
 		}
@@ -118,10 +146,10 @@ func (rt *agentRuntime) onFrame(f *Frame, _ string) {
 func (rt *agentRuntime) handleDNSQuery(f *Frame) {
 	targetHost, dnsPayload, err := parseDNSQueryFramePayload(f.Payload)
 	if err != nil {
-		rt.transport.sendFrame(LanePRI, &Frame{
-			TypeID:  FrameDNSFail,
+		_ = rt.transport.sendFrame(LanePRI, &Frame{
+			TypeID:   FrameDNSFail,
 			StreamID: f.StreamID,
-			Payload: makeErrorPayload("parse: " + err.Error()),
+			Payload:  makeErrorPayload("parse: " + err.Error()),
 		})
 		return
 	}
@@ -130,10 +158,10 @@ func (rt *agentRuntime) handleDNSQuery(f *Frame) {
 	select {
 	case rt.dnsSem <- struct{}{}:
 	case <-time.After(agentDNSTimeout):
-		rt.transport.sendFrame(LanePRI, &Frame{
-			TypeID:  FrameDNSFail,
+		_ = rt.transport.sendFrame(LanePRI, &Frame{
+			TypeID:   FrameDNSFail,
 			StreamID: f.StreamID,
-			Payload: makeErrorPayload("dns semaphore timeout"),
+			Payload:  makeErrorPayload("dns semaphore timeout"),
 		})
 		return
 	}
@@ -143,17 +171,17 @@ func (rt *agentRuntime) handleDNSQuery(f *Frame) {
 	response, err := queryDNSUpstreams(upstreams, dnsPayload, agentDNSTimeout)
 	if err != nil {
 		log.Printf("[agent] dns fail host=%s err=%v", targetHost, err)
-		rt.transport.sendFrame(LanePRI, &Frame{
-			TypeID:  FrameDNSFail,
+		_ = rt.transport.sendFrame(LanePRI, &Frame{
+			TypeID:   FrameDNSFail,
 			StreamID: f.StreamID,
-			Payload: makeErrorPayload(err.Error()),
+			Payload:  makeErrorPayload(err.Error()),
 		})
 		return
 	}
-	rt.transport.sendFrame(LanePRI, &Frame{
-		TypeID:  FrameDNSResponse,
+	_ = rt.transport.sendFrame(LanePRI, &Frame{
+		TypeID:   FrameDNSResponse,
 		StreamID: f.StreamID,
-		Payload: response,
+		Payload:  response,
 	})
 }
 

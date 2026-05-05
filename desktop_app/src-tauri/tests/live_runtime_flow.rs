@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     net::TcpListener,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -137,9 +136,7 @@ fn windows_is_elevated() -> bool {
 #[ignore = "requires live Twoman broker credentials"]
 fn live_connect_share_disconnect_flow() {
     let Some(profile) = live_profile() else {
-        eprintln!(
-            "skipping live flow; set TWOMAN_E2E_BROKER_BASE_URL and TWOMAN_E2E_CLIENT_TOKEN"
-        );
+        eprintln!("skipping live flow; set TWOMAN_E2E_BROKER_BASE_URL and TWOMAN_E2E_CLIENT_TOKEN");
         return;
     };
 
@@ -150,7 +147,9 @@ fn live_connect_share_disconnect_flow() {
         .expect("temp config dir should have a parent")
         .to_path_buf();
     let runtime = DesktopRuntime::new(paths.clone(), None);
-    runtime.save_profile(profile.clone()).expect("save_profile failed");
+    runtime
+        .save_profile(profile.clone())
+        .expect("save_profile failed");
     runtime
         .set_selected_profile(Some(profile.id.clone()))
         .expect("set_selected_profile failed");
@@ -169,10 +168,12 @@ fn live_connect_share_disconnect_flow() {
         .connection
         .socks_port
         .expect("socks port should be present while connected");
-    assert_eq!(active_http_port, profile.http_port, "helper should honor configured HTTP port");
     assert_eq!(
-        active_socks_port,
-        profile.socks_port,
+        active_http_port, profile.http_port,
+        "helper should honor configured HTTP port"
+    );
+    assert_eq!(
+        active_socks_port, profile.socks_port,
         "helper should honor configured SOCKS port"
     );
 
@@ -188,10 +189,14 @@ fn live_connect_share_disconnect_flow() {
         username: "share-user".into(),
         password: "share-pass".into(),
     };
-    runtime.save_share(share.clone()).expect("save_share failed");
+    runtime
+        .save_share(share.clone())
+        .expect("save_share failed");
     runtime.start_share(&share.id).expect("start_share failed");
 
-    let share_snapshot = runtime.snapshot().expect("snapshot failed after share start");
+    let share_snapshot = runtime
+        .snapshot()
+        .expect("snapshot failed after share start");
     let share_status = share_snapshot
         .share_statuses
         .iter()
@@ -199,13 +204,19 @@ fn live_connect_share_disconnect_flow() {
         .expect("share status should exist after start");
     assert!(share_status.running, "share should report running");
     assert_eq!(share_status.message, "Sharing");
-    assert!(!share_status.addresses.is_empty(), "share should expose reachable addresses");
+    assert!(
+        !share_status.addresses.is_empty(),
+        "share should expose reachable addresses"
+    );
 
     let shared_ip = curl_via_proxy(&format!(
         "socks5h://{}:{}@127.0.0.1:{}",
         share.username, share.password, share.listen_port
     ));
-    assert_eq!(direct_ip, shared_ip, "shared socks should exit through same IP");
+    assert_eq!(
+        direct_ip, shared_ip,
+        "shared socks should exit through same IP"
+    );
 
     let http_share = SharedProxy {
         id: "share-http".into(),
@@ -216,7 +227,9 @@ fn live_connect_share_disconnect_flow() {
         username: "http-user".into(),
         password: "http-pass".into(),
     };
-    runtime.save_share(http_share.clone()).expect("save_share http failed");
+    runtime
+        .save_share(http_share.clone())
+        .expect("save_share http failed");
     runtime
         .start_share(&http_share.id)
         .expect("start_share http failed");
@@ -225,13 +238,18 @@ fn live_connect_share_disconnect_flow() {
         "http://{}:{}@127.0.0.1:{}",
         http_share.username, http_share.password, http_share.listen_port
     ));
-    assert_eq!(direct_ip, shared_http_ip, "shared http proxy should exit through same IP");
+    assert_eq!(
+        direct_ip, shared_http_ip,
+        "shared http proxy should exit through same IP"
+    );
 
     runtime.stop_share(&share.id).expect("stop_share failed");
     runtime
         .stop_share(&http_share.id)
         .expect("stop_share http failed");
-    let stopped_snapshot = runtime.snapshot().expect("snapshot failed after share stop");
+    let stopped_snapshot = runtime
+        .snapshot()
+        .expect("snapshot failed after share stop");
     let stopped_status = stopped_snapshot
         .share_statuses
         .iter()
@@ -243,11 +261,17 @@ fn live_connect_share_disconnect_flow() {
         .iter()
         .find(|entry| entry.share_id == http_share.id)
         .expect("http share status should exist after stop");
-    assert!(!stopped_http_status.running, "http share should report stopped");
+    assert!(
+        !stopped_http_status.running,
+        "http share should report stopped"
+    );
     runtime.disconnect().expect("disconnect failed");
 
     let final_snapshot = runtime.snapshot().expect("final snapshot failed");
-    assert_eq!(final_snapshot.connection.phase, ConnectionPhase::Disconnected);
+    assert_eq!(
+        final_snapshot.connection.phase,
+        ConnectionPhase::Disconnected
+    );
     TcpListener::bind(("127.0.0.1", active_http_port))
         .expect("http port should be free after disconnect");
     TcpListener::bind(("127.0.0.1", active_socks_port))
@@ -255,7 +279,10 @@ fn live_connect_share_disconnect_flow() {
 
     runtime.connect().expect("reconnect failed");
     let reconnect_snapshot = runtime.snapshot().expect("reconnect snapshot failed");
-    assert_eq!(reconnect_snapshot.connection.phase, ConnectionPhase::Connected);
+    assert_eq!(
+        reconnect_snapshot.connection.phase,
+        ConnectionPhase::Connected
+    );
     runtime.disconnect().expect("final disconnect failed");
 
     let _ = fs::remove_dir_all(temp_root);
@@ -282,9 +309,7 @@ fn live_connect_tunnel_disconnect_flow() {
     }
 
     let Some(profile) = live_profile() else {
-        eprintln!(
-            "skipping live flow; set TWOMAN_E2E_BROKER_BASE_URL and TWOMAN_E2E_CLIENT_TOKEN"
-        );
+        eprintln!("skipping live flow; set TWOMAN_E2E_BROKER_BASE_URL and TWOMAN_E2E_CLIENT_TOKEN");
         return;
     };
 
@@ -296,7 +321,9 @@ fn live_connect_tunnel_disconnect_flow() {
         .expect("temp config dir should have a parent")
         .to_path_buf();
     let runtime = DesktopRuntime::new(paths.clone(), None);
-    runtime.save_profile(profile.clone()).expect("save_profile failed");
+    runtime
+        .save_profile(profile.clone())
+        .expect("save_profile failed");
     runtime
         .set_selected_profile(Some(profile.id.clone()))
         .expect("set_selected_profile failed");
@@ -305,7 +332,9 @@ fn live_connect_tunnel_disconnect_flow() {
         .expect("set_mode failed");
     runtime.connect().expect("connect failed");
 
-    let snapshot = runtime.snapshot().expect("snapshot failed after tunnel connect");
+    let snapshot = runtime
+        .snapshot()
+        .expect("snapshot failed after tunnel connect");
     assert_eq!(snapshot.connection.phase, ConnectionPhase::Connected);
     assert!(
         snapshot.connection.tunnel_active,
@@ -319,8 +348,13 @@ fn live_connect_tunnel_disconnect_flow() {
     );
 
     runtime.disconnect().expect("disconnect failed");
-    let final_snapshot = runtime.snapshot().expect("snapshot failed after tunnel disconnect");
-    assert_eq!(final_snapshot.connection.phase, ConnectionPhase::Disconnected);
+    let final_snapshot = runtime
+        .snapshot()
+        .expect("snapshot failed after tunnel disconnect");
+    assert_eq!(
+        final_snapshot.connection.phase,
+        ConnectionPhase::Disconnected
+    );
     assert!(
         !final_snapshot.connection.tunnel_active,
         "tunnel should report inactive after disconnect"

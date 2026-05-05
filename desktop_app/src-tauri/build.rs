@@ -17,7 +17,10 @@ fn main() {
         ("TWOMAN_TUNNEL_BINARY_BASENAME", "twoman-tunnel"),
     ] {
         println!("cargo:rerun-if-env-changed={name}");
-        println!("cargo:rustc-env={name}={}", env_or_default(name, default_value));
+        println!(
+            "cargo:rustc-env={name}={}",
+            env_or_default(name, default_value)
+        );
     }
     tauri_build::build()
 }

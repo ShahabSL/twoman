@@ -138,26 +138,24 @@ Start here:
 
 ## Repository Layout
 
-- `twoman_protocol.py`: framed protocol and lane definitions
-- `twoman_transport.py`: shared public-leg transport
-- `local_client/helper.py`: local HTTP + SOCKS5 helper
-- `hidden_server/agent.py`: hidden reverse agent
+- `helper-agent/`: Go helper/agent dataplane used by the default client and hidden-server installs
+- `twoman_protocol.py`: Python protocol helpers used by host/control compatibility tests
+- `local_client/`: local helper config, runtime state, and logs for `scripts/start_client.sh`
+- `hidden_server/`: hidden-server config, watchdog, and systemd support for the Go agent
 - `android-client/`: Android client with saved profiles, share/import profile text, proxy mode, and VPN mode
-- `desktop_app/`: Tauri desktop GUI with saved profiles, Proxy/System proxy/Tunnel mode on Windows, and authenticated external SOCKS/HTTP sharing
-- `desktop_client/`: legacy Python desktop TUI and runtime utilities
+- `desktop_app/`: Tauri desktop GUI that launches the Go helper sidecar
+- `desktop_client/`: Python desktop TUI/control shell that launches the Go helper-agent process
 - `host/node_selector/broker.js`: CloudLinux Node selector broker for managed-host deployments
 - `host/runtime/http_broker_daemon.py`: asyncio broker for bridge-style cPanel deployments
 - `host/app/bridge_runtime.php`: PHP bootstrap that starts and supervises the bridge broker
 - `host/public/api.php`: public health/bootstrap endpoint for bridge-style deployments
-- `tests/run_e2e.sh`: local smoke test
-- `tests/run_e2e_node_http.sh`: local smoke test for the Node selector broker
-- `tests/run_e2e_node_ws.sh`: local smoke test for the managed-host WebSocket profile
-- `tests/benchmark_transport_profiles.sh`: local throughput comparison for managed-host HTTP vs WebSocket profiles
+- `tests/run_e2e.sh`: compatibility wrapper for the Go Node smoke test
+- `tests/run_e2e_go_node_http.sh`: Go helper/agent smoke test for the Node selector broker
+- `tests/run_e2e_node_http.sh`: compatibility wrapper for the Go Node smoke test
 
 Backend families:
 
 - `backends/cpanel_litespeed_bridge`
-- `backends/passenger_python`
 - `backends/passenger_node`
 
 Backend overview: [docs/BACKENDS.md](docs/BACKENDS.md)
@@ -198,9 +196,9 @@ Twoman is one product with multiple public-host backend families.
 
 Today:
 
-- the stable fallback backend is the cPanel LiteSpeed bridge backend
-- the current best managed-host backend is the CloudLinux Node selector path
-- the Passenger Python backend is the preferred shared-host integration track
+- the default dataplane is the Go helper/agent on every client and hidden server
+- the current best managed-host public backend is the CloudLinux Node selector path
+- the cPanel LiteSpeed bridge backend remains available for hosts that cannot run Node
 - the generic Passenger Node backend remains a proof track for hosts where it genuinely works
 
 This is intentional. Different host classes expose different runtime models,
@@ -211,8 +209,8 @@ and Twoman does not force them into one fragile host implementation.
 Twoman still ships with repo-level scripts for each side:
 
 - `scripts/deploy_host.sh`: uploads the cPanel host files, writes `host/app/config.php`, restarts the broker, and verifies health
-- `scripts/deploy_hidden_server.sh`: uploads the hidden agent files, writes `config.json`, installs `systemd` units, enables the watchdog, and restarts the agent
-- `scripts/start_client.sh`: writes `local_client/config.json` if needed and starts the local helper in the foreground
+- `scripts/deploy_hidden_server.sh`: builds/uploads the Go hidden agent, writes `config.json`, installs `systemd` units, enables the watchdog, and restarts the agent
+- `scripts/start_client.sh`: writes `local_client/config.json` if needed, builds the Go helper, and starts it in the foreground
 
 Manual fallback:
 - [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md)
@@ -270,12 +268,12 @@ Use this path when you need to inspect or override each stage manually:
 ## Requirements
 
 - cPanel/Passenger or managed-host application-server integration for the public broker path
-- Python 3 on the host for `host/runtime/http_broker_daemon.py`
-- Python 3.9+ recommended for helper and hidden agent
+- Python 3 on the host only when using the bridge backend (`host/runtime/http_broker_daemon.py`)
+- Go 1.22+ for local helper and hidden-agent builds
 - `curl` for `scripts/deploy_host.sh`
 - `ssh` and `scp` for `scripts/deploy_hidden_server.sh`
 - `sshpass` only if you use password-based hidden-server deploys
-- `pip install -r requirements.txt`
+- `pip install -r requirements.txt` for control scripts and bridge-host tooling
 
 ### 4. Verify
 
@@ -303,16 +301,17 @@ hidden outbound proxy exit, not the local client.
 
 ## Development
 
-Run the local smoke test:
+Run the Go dataplane smoke test:
 
 ```bash
-tests/run_e2e.sh
+tests/run_e2e_go_node_http.sh
 ```
 
 Enable verbose tracing temporarily:
 
 ```bash
-TWOMAN_TRACE=1 python3 hidden_server/agent.py --config hidden_server/config.json
+cd helper-agent
+TWOMAN_TRACE=1 go run . --mode agent --config ../hidden_server/config.json
 ```
 
 Tracing is off by default to avoid log growth on production hosts.
@@ -321,7 +320,7 @@ Client crash and runtime logs:
 
 - `scripts/start_client.sh` writes a rotating helper log to `local_client/logs/helper.log`
 - `TWOMAN_LOG_PATH` overrides the helper log location
-- uncaught exceptions and Python fault dumps are appended to the same helper log
+- Go helper stderr/stdout is appended to the same helper log
 
 ## Operational Notes
 

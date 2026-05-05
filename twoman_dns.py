@@ -5,6 +5,8 @@ import contextlib
 import socket
 import struct
 
+from twoman_proxy import open_connection_via_proxy
+
 
 DEFAULT_DNS_SERVERS = ["1.1.1.1", "8.8.8.8"]
 DNS_TYPE_AAAA = 28
@@ -167,11 +169,14 @@ async def udp_dns_query(host, port, payload, timeout):
     raise last_error or RuntimeError("dns udp query failed")
 
 
-async def tcp_dns_query(host, port, payload, timeout):
+async def tcp_dns_query(host, port, payload, timeout, *, proxy_url=""):
     reader = None
     writer = None
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
+        if proxy_url:
+            reader, writer = await open_connection_via_proxy(proxy_url, host, port, timeout)
+        else:
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=timeout)
         writer.write(struct.pack("!H", len(payload)) + payload)
         await asyncio.wait_for(writer.drain(), timeout=timeout)
         response_length = struct.unpack("!H", await asyncio.wait_for(reader.readexactly(2), timeout=timeout))[0]
@@ -183,7 +188,9 @@ async def tcp_dns_query(host, port, payload, timeout):
                 await writer.wait_closed()
 
 
-async def query_dns_upstream(host, port, payload, timeout):
+async def query_dns_upstream(host, port, payload, timeout, *, proxy_url=""):
+    if proxy_url:
+        return await tcp_dns_query(host, port, payload, timeout, proxy_url=proxy_url)
     udp_error = None
     try:
         response = await udp_dns_query(host, port, payload, timeout)
@@ -202,7 +209,7 @@ async def query_dns_upstream(host, port, payload, timeout):
         raise udp_error
 
 
-async def resolve_dns_via_upstreams(upstream_hosts, payload, timeout):
+async def resolve_dns_via_upstreams(upstream_hosts, payload, timeout, *, proxy_url=""):
     hosts = [str(host).strip() for host in (upstream_hosts or []) if str(host).strip()]
     if not hosts:
         raise RuntimeError("no dns upstreams configured")
@@ -210,7 +217,13 @@ async def resolve_dns_via_upstreams(upstream_hosts, payload, timeout):
     tasks = []
     try:
         async def query_upstream(upstream_host):
-            response = await query_dns_upstream(upstream_host, 53, payload, timeout)
+            response = await query_dns_upstream(
+                upstream_host,
+                53,
+                payload,
+                timeout,
+                proxy_url=proxy_url,
+            )
             return upstream_host, response
 
         tasks = [asyncio.create_task(query_upstream(upstream_host)) for upstream_host in hosts]

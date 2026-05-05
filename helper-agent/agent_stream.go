@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -54,6 +55,8 @@ type AgentStream struct {
 
 	// State
 	closed     int32 // atomic bool
+	closeOnce  sync.Once
+	doneCh     chan struct{}
 	sendClosed bool
 	closedMu   sync.Mutex
 }
@@ -65,6 +68,7 @@ func newAgentStream(id uint32, host string, port uint16, rt *agentRuntime) *Agen
 		targetPort:  port,
 		rt:          rt,
 		recvCh:      make(chan []byte, 512),
+		doneCh:      make(chan struct{}),
 		sendCredit:  initialWindow,
 		recvPending: make(map[uint64][]byte),
 	}
@@ -77,7 +81,10 @@ func (s *AgentStream) isClosed() bool {
 }
 
 func (s *AgentStream) setClosed() {
-	atomic.StoreInt32(&s.closed, 1)
+	s.closeOnce.Do(func() {
+		atomic.StoreInt32(&s.closed, 1)
+		close(s.doneCh)
+	})
 	s.sendCreditCond.Broadcast()
 }
 
@@ -85,9 +92,11 @@ func (s *AgentStream) setClosed() {
 // Must be called in a dedicated goroutine.
 func (s *AgentStream) start() {
 	addr := net.JoinHostPort(s.targetHost, fmt.Sprintf("%d", s.targetPort))
-	conn, err := net.DialTimeout("tcp", addr, 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	conn, err := s.rt.dialOrigin(ctx, "tcp", addr)
 	if err != nil {
-		s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
+		_ = s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
 			TypeID:   FrameOpenFail,
 			StreamID: s.id,
 			Payload:  makeErrorPayload(err.Error()),
@@ -109,7 +118,7 @@ func (s *AgentStream) start() {
 		return
 	}
 
-	s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
+	_ = s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
 		TypeID:   FrameOpenOK,
 		StreamID: s.id,
 	})
@@ -155,18 +164,23 @@ func (s *AgentStream) relay() {
 	// helper → origin: receive buffered data from recvCh, write to origin.
 	go func() {
 		for {
-			payload, ok := <-s.recvCh
-			if !ok || payload == nil {
-				agentCloseWrite(s.conn)
+			select {
+			case payload, ok := <-s.recvCh:
+				if !ok || payload == nil {
+					agentCloseWrite(s.conn)
+					errCh <- nil
+					return
+				}
+				if _, err := s.conn.Write(payload); err != nil {
+					s.reset("origin write: " + err.Error())
+					errCh <- err
+					return
+				}
+				s.grantWindow(len(payload))
+			case <-s.doneCh:
 				errCh <- nil
 				return
 			}
-			if _, err := s.conn.Write(payload); err != nil {
-				s.reset("origin write: " + err.Error())
-				errCh <- err
-				return
-			}
-			s.grantWindow(len(payload))
 		}
 	}()
 
@@ -227,7 +241,7 @@ func (s *AgentStream) onFrame(f *Frame) {
 				if ok {
 					s.pendingBytes -= len(existing)
 				}
-				s.recvPending[rawOffset] = append([]byte{}, payload...)
+				s.recvPending[rawOffset] = payload
 				s.pendingBytes += len(payload)
 			}
 			s.reorderMu.Unlock()
@@ -263,11 +277,11 @@ func (s *AgentStream) onFrame(f *Frame) {
 // Caller must hold reorderMu.
 func (s *AgentStream) acceptInOrder(payload []byte) {
 	s.recvOffset += uint64(len(payload))
-	p := append([]byte{}, payload...)
 	select {
-	case s.recvCh <- p:
+	case s.recvCh <- payload:
+	case <-s.doneCh:
 	default:
-		s.recvCh <- p // block briefly rather than drop
+		go s.reset("receive buffer full")
 	}
 }
 
@@ -307,14 +321,25 @@ func (s *AgentStream) sendData(payload []byte) error {
 		}
 		s.sendCreditMu.Lock()
 		for s.sendCredit <= 0 && !s.isClosed() {
-			s.sendCreditCond.Wait()
+			s.sendCreditMu.Unlock()
+			select {
+			case <-s.doneCh:
+				return fmt.Errorf("stream closed")
+			case <-time.After(50 * time.Millisecond):
+			}
+			s.sendCreditMu.Lock()
 		}
 		if s.isClosed() {
 			s.sendCreditMu.Unlock()
 			return fmt.Errorf("stream closed")
 		}
 		chunkLen := int64(len(view))
-		if int64(readChunkSize) < chunkLen {
+		if s.sendOffset < priLimit {
+			priRemaining := int64(priLimit - s.sendOffset)
+			if priRemaining < chunkLen {
+				chunkLen = priRemaining
+			}
+		} else if int64(readChunkSize) < chunkLen {
 			chunkLen = readChunkSize
 		}
 		if s.sendCredit < chunkLen {
@@ -330,13 +355,18 @@ func (s *AgentStream) sendData(payload []byte) error {
 			lane = LaneBulk
 			flags = FlagDataBulk
 		}
-		s.rt.transport.sendFrame(lane, &Frame{
+		if err := s.rt.transport.sendFrame(lane, &Frame{
 			TypeID:   FrameData,
 			Flags:    flags,
 			StreamID: s.id,
 			Offset:   s.sendOffset,
 			Payload:  append([]byte{}, chunk...),
-		})
+		}); err != nil {
+			s.sendCreditMu.Lock()
+			s.sendCredit += chunkLen
+			s.sendCreditMu.Unlock()
+			return err
+		}
 		s.sendOffset += uint64(chunkLen)
 		view = view[chunkLen:]
 	}
@@ -352,7 +382,7 @@ func (s *AgentStream) finish() {
 	}
 	s.sendClosed = true
 	s.flushWindow()
-	s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
+	_ = s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
 		TypeID:   FrameFIN,
 		StreamID: s.id,
 		Offset:   s.sendOffset,
@@ -365,7 +395,7 @@ func (s *AgentStream) reset(reason string) {
 		return
 	}
 	s.setClosed()
-	s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
+	_ = s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
 		TypeID:   FrameRST,
 		StreamID: s.id,
 		Payload:  makeErrorPayload(reason),
@@ -380,11 +410,12 @@ func (s *AgentStream) grantWindow(n int) {
 	}
 	s.windowMu.Lock()
 	s.pendingWindow += int64(n)
-	flush := s.pendingWindow >= windowFlushBytes || time.Now().After(s.windowFlushAt)
+	now := time.Now()
+	flush := s.pendingWindow >= windowFlushBytes || (!s.windowFlushAt.IsZero() && now.After(s.windowFlushAt))
 	if flush {
 		s.flushWindowLocked()
 	} else if s.windowFlushAt.IsZero() {
-		s.windowFlushAt = time.Now().Add(windowFlushDelay)
+		s.windowFlushAt = now.Add(windowFlushDelay)
 		go func() {
 			time.Sleep(windowFlushDelay)
 			s.windowMu.Lock()
@@ -408,7 +439,7 @@ func (s *AgentStream) flushWindowLocked() {
 	v := s.pendingWindow
 	s.pendingWindow = 0
 	s.windowFlushAt = time.Time{}
-	s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
+	_ = s.rt.transport.sendFrame(s.rt.transport.streamControlLane, &Frame{
 		TypeID:   FrameWindow,
 		StreamID: s.id,
 		Offset:   uint64(v),

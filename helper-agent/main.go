@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -62,6 +63,9 @@ func runHelper(ctx context.Context, cfg *Config, sigCh <-chan os.Signal) {
 
 	log.Printf("HTTP  proxy  → %s", httpAddr)
 	log.Printf("SOCKS5 proxy → %s", socksAddr)
+	if err := writeListenState(cfg, httpLn, socksLn); err != nil {
+		log.Fatalf("write listen state: %v", err)
+	}
 
 	go serveHTTP(ctx, httpLn, rt)
 	go serveSOCKS(ctx, socksLn, rt)
@@ -72,10 +76,37 @@ func runHelper(ctx context.Context, cfg *Config, sigCh <-chan os.Signal) {
 	case <-ctx.Done():
 	}
 
-	rt.stop()
 	httpLn.Close()
 	socksLn.Close()
+	rt.stop()
 	log.Println("stopped")
+}
+
+func writeListenState(cfg *Config, httpLn, socksLn net.Listener) error {
+	if cfg.ListenStatePath == "" {
+		return nil
+	}
+	httpAddr, _ := httpLn.Addr().(*net.TCPAddr)
+	socksAddr, _ := socksLn.Addr().(*net.TCPAddr)
+	payload := map[string]interface{}{
+		"http_host":  cfg.ListenHost,
+		"socks_host": cfg.ListenHost,
+	}
+	if httpAddr != nil {
+		payload["http_port"] = httpAddr.Port
+	} else {
+		payload["http_port"] = cfg.HTTPListenPort
+	}
+	if socksAddr != nil {
+		payload["socks_port"] = socksAddr.Port
+	} else {
+		payload["socks_port"] = cfg.SOCKSListenPort
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfg.ListenStatePath, data, 0600)
 }
 
 func runAgent(ctx context.Context, cfg *Config, sigCh <-chan os.Signal) {

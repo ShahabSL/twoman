@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	mathrand "math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,7 +25,7 @@ import (
 type onFrameFunc func(frame *Frame, lane string)
 
 // laneTransport implements the HTTP polling transport that matches
-// twoman_transport.LaneTransport. It runs one UP goroutine and one (or more)
+// the managed-host transport profile. It runs one UP goroutine and one (or more)
 // DOWN goroutines per lane.
 type laneTransport struct {
 	cfg           *Config
@@ -39,11 +41,11 @@ type laneTransport struct {
 	queues map[string]chan *Frame
 	// When collapse_data_lanes the pri/bulk queues are nil and both
 	// write to dataQueue, which is served by the "data" lane workers.
-	dataQueue chan *Frame
+	dataQueue         chan *Frame
 	collapseDataLanes bool
 
 	// Replay dequeues: frames that must be retried after an UP error.
-	replayMu    sync.Mutex
+	replayMu     sync.Mutex
 	replayQueues map[string][]*Frame
 
 	// Failure counters for backoff (direction+lane key → count)
@@ -58,24 +60,31 @@ type laneTransport struct {
 	userAgent string
 
 	// Stop signal
-	stopCh chan struct{}
-	wg     sync.WaitGroup
+	ctx      context.Context
+	cancel   context.CancelFunc
+	stopCh   chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 
-	rng *mathrand.Rand
+	rngMu sync.Mutex
+	rng   *mathrand.Rand
 
 	// Configurable tunables (derived from cfg once at start)
-	maxBatchBytes            int
-	flushDelay               time.Duration
-	httpTimeout              time.Duration
-	downReadTimeout          time.Duration
-	downStreamMaxSession     time.Duration
-	intervalJitterRatio      float64
-	backoffInitialDelay      time.Duration
-	backoffMaxDelay          time.Duration
-	downLanes                map[string]bool
-	downParallelism          map[string]int
-	uploadProfiles           map[string]uploadProfile
-	streamControlLane        string
+	maxBatchBytes        int
+	flushDelay           time.Duration
+	httpTimeout          time.Duration
+	downReadTimeout      time.Duration
+	downStreamMaxSession time.Duration
+	intervalJitterRatio  float64
+	backoffInitialDelay  time.Duration
+	backoffMaxDelay      time.Duration
+	downLanes            map[string]bool
+	downParallelism      map[string]int
+	uploadProfiles       map[string]uploadProfile
+	streamControlLane    string
+	sendQueueTimeout     time.Duration
+	upWorkers            map[string]int
+	cipherSuite          string
 }
 
 type uploadProfile struct {
@@ -118,7 +127,10 @@ func newLaneTransport(cfg *Config, role, peerID string, onFrame onFrameFunc) *la
 		backoffInitialDelay:  time.Duration(cfg.BackoffInitialDelaySeconds * float64(time.Second)),
 		backoffMaxDelay:      time.Duration(cfg.BackoffMaxDelaySeconds * float64(time.Second)),
 		streamControlLane:    LaneCTL,
+		sendQueueTimeout:     time.Duration(cfg.SendQueueTimeoutSeconds * float64(time.Second)),
 		collapseDataLanes:    true,
+		upWorkers:            map[string]int{LaneCTL: 1, LaneData: 2},
+		cipherSuite:          cipherSuiteHMACSHA256CTR,
 	}
 
 	// ctl/pri/bulk queues kept for non-collapsed sends; dataQueue serves the
@@ -146,6 +158,264 @@ func newLaneTransport(cfg *Config, role, peerID string, onFrame onFrameFunc) *la
 	return t
 }
 
+func (t *laneTransport) applyBrokerCapabilities(ctx context.Context) error {
+	profileName := strings.TrimSpace(t.cfg.TransportProfile)
+	if profileName != "" && profileName != "auto" {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", t.routes.healthURL(), nil)
+	if err != nil {
+		return err
+	}
+	headers := buildConnectionHeaders(t.token, t.role, t.peerLabel, t.peerSessionID, t.userAgent, t.cfg)
+	headers["X-Twoman-Cipher"] = t.cipherSuite
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	client := t.buildHTTPClient(LaneCTL, "health")
+	var resp *http.Response
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		resp, err = client.Do(req.Clone(ctx))
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("broker health probe: %w", err)
+		}
+		select {
+		case <-time.After(250 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodySnip, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("broker health status %d: %s", resp.StatusCode, bodySnip)
+	}
+	var payload map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return fmt.Errorf("broker health decode: %w", err)
+	}
+	capabilities := extractCapabilities(payload)
+	if len(capabilities) == 0 {
+		return nil
+	}
+	t.cipherSuite = selectCipherSuite(capabilities)
+	profileName = selectTransportProfile(t.cfg, capabilities)
+	if profileName == "" {
+		return nil
+	}
+	if err := t.applyTransportProfile(capabilities, profileName); err != nil {
+		return err
+	}
+	log.Printf("[transport] profile=%s cipher=%s role=%s down_lanes=%v down_parallelism=%v up_workers=%v stream_control_lane=%s",
+		profileName, t.cipherSuite, t.role, sortedLaneKeys(t.downLanes), t.downParallelism, t.upWorkers, t.streamControlLane)
+	return nil
+}
+
+func selectCipherSuite(capabilities map[string]interface{}) string {
+	suites := stringSlice(capabilities["cipher_suites"])
+	if hasString(suites, cipherSuiteAES256CTR) {
+		return cipherSuiteAES256CTR
+	}
+	if hasString(suites, cipherSuiteHMACSHA256CTR) {
+		return cipherSuiteHMACSHA256CTR
+	}
+	return cipherSuiteHMACSHA256CTR
+}
+
+func extractCapabilities(payload map[string]interface{}) map[string]interface{} {
+	if cap, ok := payload["capabilities"].(map[string]interface{}); ok {
+		return cap
+	}
+	stats, _ := payload["stats"].(map[string]interface{})
+	if cap, ok := stats["capabilities"].(map[string]interface{}); ok {
+		return cap
+	}
+	return nil
+}
+
+func selectTransportProfile(cfg *Config, capabilities map[string]interface{}) string {
+	if forced := strings.TrimSpace(cfg.TransportProfile); forced != "" && forced != "auto" {
+		return forced
+	}
+	supported := stringSlice(capabilities["supported_profiles"])
+	recommended, _ := capabilities["recommended_profile"].(string)
+	if hasString(supported, recommended) {
+		return recommended
+	}
+	if hasString(supported, "managed_host_http") {
+		return "managed_host_http"
+	}
+	if len(supported) > 0 {
+		return supported[0]
+	}
+	return recommended
+}
+
+func (t *laneTransport) applyTransportProfile(capabilities map[string]interface{}, profileName string) error {
+	profiles, _ := capabilities["profiles"].(map[string]interface{})
+	rawProfile, ok := profiles[profileName].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("broker profile %q is not advertised", profileName)
+	}
+	rawRole, ok := rawProfile[t.role].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("broker profile %q has no %s settings", profileName, t.role)
+	}
+	if lanes := stringSlice(rawRole["down_lanes"]); len(lanes) > 0 {
+		t.downLanes = make(map[string]bool)
+		for _, lane := range lanes {
+			t.downLanes[lane] = true
+		}
+	}
+	if rawParallel, ok := rawRole["down_parallelism"].(map[string]interface{}); ok {
+		t.downParallelism = parseIntMap(rawParallel, 1)
+	}
+	if rawWorkers, ok := rawRole["up_workers"].(map[string]interface{}); ok {
+		for lane, workers := range parseIntMap(rawWorkers, 1) {
+			t.upWorkers[lane] = workers
+		}
+	}
+	if rawHTTP2, ok := rawRole["http2_enabled"].(map[string]interface{}); ok {
+		if v, ok := rawHTTP2[LaneCTL].(bool); ok {
+			t.cfg.http2CtlEnabled = v
+		}
+		if v, ok := rawHTTP2[LaneData].(bool); ok {
+			t.cfg.http2DataEnabled = v
+		}
+	}
+	if controlLane, ok := rawRole["stream_control_lane"].(string); ok && controlLane != "" {
+		t.streamControlLane = controlLane
+	}
+	if timeoutSeconds, ok := numberValue(rawRole["down_read_timeout_seconds"]); ok && timeoutSeconds > 0 {
+		t.downReadTimeout = time.Duration(timeoutSeconds * float64(time.Second))
+	}
+	if rawUploads, ok := rawRole["upload_profiles"].(map[string]interface{}); ok {
+		for lane, value := range rawUploads {
+			raw, ok := value.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			profile := t.uploadProfile(lane)
+			if maxBytes, ok := numberValue(raw["max_batch_bytes"]); ok && maxBytes > 0 {
+				profile.maxBatchBytes = int(maxBytes)
+			}
+			if flushSeconds, ok := numberValue(raw["flush_delay_seconds"]); ok && flushSeconds >= 0 {
+				profile.flushDelay = time.Duration(flushSeconds * float64(time.Second))
+			}
+			t.uploadProfiles[lane] = profile
+		}
+	}
+	if maxFrame, ok := numberValue(capabilities["max_frame_payload_bytes"]); ok && maxFrame > 0 {
+		t.cfg.MaxFramePayloadBytes = int(maxFrame)
+	}
+	if t.collapseDataLanes && t.downLanes[LaneData] {
+		t.upWorkers[LaneData] = max2i(2, t.upWorkers[LaneData])
+	}
+	return nil
+}
+
+func (t *laneTransport) applyConfigOverrides() {
+	if len(t.cfg.DownLanes) > 0 {
+		t.downLanes = make(map[string]bool, len(t.cfg.DownLanes))
+		for _, lane := range t.cfg.DownLanes {
+			lane = strings.TrimSpace(lane)
+			if lane != "" {
+				t.downLanes[lane] = true
+			}
+		}
+	}
+	for lane, workers := range t.cfg.DownParallelism {
+		if workers < 1 {
+			workers = 1
+		}
+		t.downParallelism[lane] = workers
+	}
+	for lane, workers := range t.cfg.UpWorkers {
+		if workers < 1 {
+			workers = 1
+		}
+		t.upWorkers[lane] = workers
+	}
+	for lane, override := range t.cfg.UploadProfiles {
+		profile := t.uploadProfile(lane)
+		if override.MaxBatchBytes > 0 {
+			profile.maxBatchBytes = override.MaxBatchBytes
+		}
+		if override.FlushDelaySeconds != nil && *override.FlushDelaySeconds >= 0 {
+			profile.flushDelay = time.Duration(*override.FlushDelaySeconds * float64(time.Second))
+		}
+		t.uploadProfiles[lane] = profile
+	}
+}
+
+func stringSlice(value interface{}) []string {
+	raw, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	values := make([]string, 0, len(raw))
+	for _, item := range raw {
+		text := strings.TrimSpace(fmt.Sprint(item))
+		if text != "" {
+			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func parseIntMap(raw map[string]interface{}, minimum int) map[string]int {
+	values := make(map[string]int)
+	for key, value := range raw {
+		number, ok := numberValue(value)
+		if !ok {
+			continue
+		}
+		parsed := int(number)
+		if parsed < minimum {
+			parsed = minimum
+		}
+		values[key] = parsed
+	}
+	return values
+}
+
+func numberValue(value interface{}) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case json.Number:
+		n, err := v.Float64()
+		return n, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func hasString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedLaneKeys(values map[string]bool) []string {
+	lanes := make([]string, 0, len(values))
+	for lane, enabled := range values {
+		if enabled {
+			lanes = append(lanes, lane)
+		}
+	}
+	return lanes
+}
+
 // externalLanes returns the lanes that have their own UP/DOWN goroutines.
 // With collapseDataLanes=true, pri+bulk are merged into the data lane.
 func (t *laneTransport) externalLanes() []string {
@@ -155,14 +425,22 @@ func (t *laneTransport) externalLanes() []string {
 	return allLanes
 }
 
-func (t *laneTransport) start() {
+func (t *laneTransport) start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t.ctx, t.cancel = context.WithCancel(ctx)
+	if err := t.applyBrokerCapabilities(t.ctx); err != nil {
+		return err
+	}
+	t.applyConfigOverrides()
+	log.Printf("[transport] role=%s effective down_lanes=%v down_parallelism=%v up_workers=%v data_upload_profile=%+v",
+		t.role, sortedLaneKeys(t.downLanes), t.downParallelism, t.upWorkers, t.uploadProfiles[LaneData])
 	for _, lane := range t.externalLanes() {
 		lane := lane
-		upWorkers := 1
-		// data lane: two UP goroutines so one batch can be in-flight while the
-		// next is being collected from the shared dataQueue, pipelining uploads.
-		if t.collapseDataLanes && lane == LaneData {
-			upWorkers = 2
+		upWorkers := t.upWorkers[lane]
+		if upWorkers < 1 {
+			upWorkers = 1
 		}
 		for i := 0; i < upWorkers; i++ {
 			t.wg.Add(1)
@@ -192,14 +470,26 @@ func (t *laneTransport) start() {
 		defer t.wg.Done()
 		t.pingLoop()
 	}()
+	return nil
 }
 
 func (t *laneTransport) stop() {
-	close(t.stopCh)
+	t.stopOnce.Do(func() {
+		if t.cancel != nil {
+			t.cancel()
+		}
+		close(t.stopCh)
+		t.clientMu.Lock()
+		for _, client := range t.clients {
+			client.CloseIdleConnections()
+		}
+		t.clients = make(map[string]*http.Client)
+		t.clientMu.Unlock()
+	})
 	t.wg.Wait()
 }
 
-func (t *laneTransport) sendFrame(lane string, f *Frame) {
+func (t *laneTransport) sendFrame(lane string, f *Frame) error {
 	// With collapseDataLanes, pri and bulk both route to the data queue.
 	// DATA frames get their FlagDataBulk bit set/cleared to preserve lane identity,
 	// matching Python LaneTransport.send_frame collapse logic.
@@ -213,19 +503,29 @@ func (t *laneTransport) sendFrame(lane string, f *Frame) {
 			}
 			f = &Frame{TypeID: f.TypeID, Flags: newFlags, StreamID: f.StreamID, Offset: f.Offset, Payload: f.Payload}
 		}
-		select {
-		case t.dataQueue <- f:
-		case <-t.stopCh:
-		}
-		return
+		return t.enqueueFrame(t.dataQueue, f)
 	}
 	ch := t.queues[lane]
 	if ch == nil {
-		return
+		return fmt.Errorf("unknown lane %s", lane)
 	}
+	return t.enqueueFrame(ch, f)
+}
+
+func (t *laneTransport) enqueueFrame(ch chan *Frame, f *Frame) error {
+	timeout := t.sendQueueTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case ch <- f:
+		return nil
 	case <-t.stopCh:
+		return context.Canceled
+	case <-timer.C:
+		return fmt.Errorf("transport send queue full after %v", timeout)
 	}
 }
 
@@ -241,15 +541,16 @@ func (t *laneTransport) upLoop(lane string) {
 		// Encrypt: prepend 16-byte random IV then AES-256-CTR encrypt.
 		iv := make([]byte, 16)
 		rand.Read(iv) //nolint:errcheck
-		cipher := newTransportCipher([]byte(t.token), iv)
+		cipher := newTransportCipherSuite(t.cipherSuite, []byte(t.token), iv)
 		plain := encodeBatch(batch)
-		encrypted := make([]byte, len(plain))
-		cipher.process(encrypted, plain)
-		body := append(iv, encrypted...)
+		body := make([]byte, 16+len(plain))
+		copy(body[:16], iv)
+		cipher.process(body[16:], plain)
 
 		client := t.getClient(lane, "up", 0)
 		reqURL := t.routes.laneURL(lane, "up")
 		headers := buildConnectionHeaders(t.token, t.role, t.peerLabel, t.peerSessionID, t.userAgent, t.cfg)
+		headers["X-Twoman-Cipher"] = t.cipherSuite
 		headers["Content-Type"] = t.cfg.BinaryMediaType
 
 		err := t.doPost(client, reqURL, headers, body, t.httpTimeout)
@@ -276,11 +577,25 @@ func encodeBatch(frames []*Frame) []byte {
 	for _, f := range frames {
 		total += wireSize(f)
 	}
-	buf := make([]byte, 0, total)
+	buf := make([]byte, total)
+	offset := 0
 	for _, f := range frames {
-		buf = append(buf, encodeFrame(f)...)
+		offset += writeFrameInto(buf[offset:], f)
 	}
 	return buf
+}
+
+func writeFrameInto(dst []byte, f *Frame) int {
+	payload := f.Payload
+	dst[0] = f.TypeID
+	dst[1] = f.Flags
+	dst[2] = 0
+	dst[3] = 0
+	binary.BigEndian.PutUint32(dst[4:8], f.StreamID)
+	binary.BigEndian.PutUint64(dst[8:16], f.Offset)
+	binary.BigEndian.PutUint32(dst[16:20], uint32(len(payload)))
+	copy(dst[20:], payload)
+	return frameHeaderSize + len(payload)
 }
 
 // wireSize returns the encoded byte size of a frame without allocating.
@@ -360,7 +675,11 @@ done:
 }
 
 func (t *laneTransport) doPost(client *http.Client, reqURL string, headers map[string]string, body []byte, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	baseCtx := t.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(baseCtx, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
@@ -419,12 +738,17 @@ func (t *laneTransport) downLoop(lane string, workerIdx int) {
 // doDownSession runs one streaming GET session. It returns when the session
 // ends (EOF, rotation, error) so downLoop can reconnect.
 func (t *laneTransport) doDownSession(lane string, workerIdx int) error {
-	buf := make([]byte, 64*1024)
+	buf := make([]byte, downReadBufferSize)
 	client := t.getClient(lane, "down", workerIdx)
 	reqURL := t.routes.laneURL(lane, "down")
 	headers := buildConnectionHeaders(t.token, t.role, t.peerLabel, t.peerSessionID, t.userAgent, t.cfg)
+	headers["X-Twoman-Cipher"] = t.cipherSuite
 
-	req, err := http.NewRequest("GET", reqURL, nil)
+	baseCtx := t.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(baseCtx, "GET", reqURL, nil)
 	if err != nil {
 		return err
 	}
@@ -456,9 +780,9 @@ func (t *laneTransport) doDownSession(lane string, workerIdx int) error {
 	t.markSuccess("down", lane)
 
 	// --- Streaming decrypt + frame decode ---
-	var cipher *transportCipher
+	var cipher transportCipher
 	var ivBuf []byte
-	decoder := &FrameDecoder{}
+	decoder := newFrameDecoder(t.cfg.MaxFramePayloadBytes)
 	sessionStart := time.Now()
 	var sawNonPing bool
 
@@ -487,14 +811,18 @@ func (t *laneTransport) doDownSession(lane string, workerIdx int) error {
 				} else {
 					ivBuf = append(ivBuf, chunk[:need]...)
 					chunk = chunk[need:]
-					cipher = newTransportCipher([]byte(t.token), ivBuf)
+					cipher = newTransportCipherSuite(t.cipherSuite, []byte(t.token), ivBuf)
 				}
 			}
 
 			if cipher != nil && len(chunk) > 0 {
 				// Decrypt in-place — no allocation in the hot path.
 				cipher.processInPlace(chunk)
-				for _, f := range decoder.feed(chunk) {
+				frames, err := decoder.feed(chunk)
+				if err != nil {
+					return err
+				}
+				for _, f := range frames {
 					if f.TypeID != FramePing {
 						sawNonPing = true
 					}
@@ -570,11 +898,16 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 		useHTTP2 = t.cfg.http2DataEnabled
 	}
 
+	baseDialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
 	tr := &http.Transport{
 		MaxIdleConns:        50,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     120 * time.Second,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: !t.cfg.VerifyTLS},
+		DialContext:         baseDialer.DialContext,
 		DisableKeepAlives:   false,
 		DisableCompression:  true, // we request identity encoding; prevent accidental gzip decode of binary payloads
 		ForceAttemptHTTP2:   useHTTP2,
@@ -586,8 +919,12 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 
 	if t.cfg.UpstreamProxyURL != "" {
 		proxyURL, err := url.Parse(t.cfg.UpstreamProxyURL)
-		if err == nil {
+		if err == nil && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
 			tr.Proxy = http.ProxyURL(proxyURL)
+		} else if dialContext, ok, err := newProxyDialContext(t.cfg.UpstreamProxyURL, baseDialer); err != nil {
+			log.Printf("[transport] ignoring invalid upstream proxy URL: %v", err)
+		} else if ok {
+			tr.DialContext = dialContext
 		}
 	}
 
@@ -625,9 +962,18 @@ func (t *laneTransport) requeue(lane string, frames []*Frame) {
 	if len(frames) == 0 {
 		return
 	}
+	retriable := make([]*Frame, 0, len(frames))
+	for _, frame := range frames {
+		if frame.TypeID == FrameData || frame.TypeID == FramePing {
+			retriable = append(retriable, frame)
+		}
+	}
+	if len(retriable) == 0 {
+		return
+	}
 	t.replayMu.Lock()
 	defer t.replayMu.Unlock()
-	t.replayQueues[lane] = append(frames, t.replayQueues[lane]...)
+	t.replayQueues[lane] = append(retriable, t.replayQueues[lane]...)
 }
 
 // ---- Backoff / jitter ------------------------------------------------------
@@ -657,7 +1003,7 @@ func (t *laneTransport) backoff(dir, lane string) time.Duration {
 		))
 	}
 	// jitter in [0, ceiling]
-	return time.Duration(t.rng.Float64() * float64(ceiling))
+	return time.Duration(t.randFloat64() * float64(ceiling))
 }
 
 func (t *laneTransport) jitteredInterval(base time.Duration) time.Duration {
@@ -668,7 +1014,13 @@ func (t *laneTransport) jitteredInterval(base time.Duration) time.Duration {
 	delta := float64(base) * ratio
 	lo := float64(base) - delta
 	hi := float64(base) + delta
-	return time.Duration(lo + t.rng.Float64()*(hi-lo))
+	return time.Duration(lo + t.randFloat64()*(hi-lo))
+}
+
+func (t *laneTransport) randFloat64() float64 {
+	t.rngMu.Lock()
+	defer t.rngMu.Unlock()
+	return t.rng.Float64()
 }
 
 // ---- Helpers ---------------------------------------------------------------

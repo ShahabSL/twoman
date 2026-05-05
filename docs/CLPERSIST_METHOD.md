@@ -58,25 +58,19 @@ hidden-agent control on HTTP/1.1.
 
 ## Client Logging
 
-The helper now writes rotating client logs by default.
+The Go helper writes rotating client logs by default.
 
 - default path: `logs/helper.log`
 - override with `TWOMAN_LOG_PATH=/path/to/helper.log`
-- uncaught exceptions and Python fault dumps are written to the same log
+- Go helper stderr/stdout are written to the same log
 
 ## Code Paths
 
 Main host broker:
 - `host/node_selector/broker.js`
 
-Shared transport:
-- `twoman_transport.py`
-
-Local helper:
-- `local_client/helper.py`
-
-Hidden agent:
-- `hidden_server/agent.py`
+Go helper/agent dataplane:
+- `helper-agent/`
 
 Client launcher defaults:
 - `scripts/start_client.sh`

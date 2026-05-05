@@ -8,9 +8,8 @@ import android.os.Build
 import android.os.Process
 import android.os.IBinder
 import android.util.Log
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONObject
+import java.io.File
 import kotlin.concurrent.thread
 
 class ProxyService : Service() {
@@ -20,6 +19,8 @@ class ProxyService : Service() {
     private val helperStopJoinTimeoutMs = 12_000L
     private var helperThread: Thread? = null
     private var listenWatcherThread: Thread? = null
+    @Volatile
+    private var helperProcess: java.lang.Process? = null
     private lateinit var stateStore: RuntimeStateStore
     @Volatile
     private var currentMode: String = MODE_PROXY
@@ -103,11 +104,25 @@ class ProxyService : Service() {
             ),
         )
         try {
-            if (!Python.isStarted()) {
-                Python.start(AndroidPlatform(applicationContext))
+            val helperBinary = File(applicationInfo.nativeLibraryDir, "libtwoman_helper.so")
+            if (!helperBinary.canExecute()) {
+                helperBinary.setExecutable(true, false)
             }
-            val module = Python.getInstance().getModule("android_entry")
-            module.callAttr("run_helper", configFile.absolutePath)
+            val process = ProcessBuilder(
+                helperBinary.absolutePath,
+                "--config",
+                configFile.absolutePath,
+                "--mode",
+                "helper",
+            )
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+                .start()
+            helperProcess = process
+            val exitCode = process.waitFor()
+            if (!stopRequested && exitCode != 0) {
+                error("Go helper exited with code $exitCode")
+            }
         } catch (error: Throwable) {
             stateStore.write(
                 RuntimeStatus(
@@ -123,6 +138,7 @@ class ProxyService : Service() {
                 ),
             )
         } finally {
+            helperProcess = null
             helperThread = null
             listenWatcherThread = null
             stopSelf()
@@ -180,19 +196,15 @@ class ProxyService : Service() {
         val threadToJoin = helperThread
         val watcherToJoin = listenWatcherThread
         thread(name = "local-runtime-stop", start = true) {
-            val stopped = runCatching {
-                if (!Python.isStarted()) {
-                    false
-                } else {
-                    Python.getInstance().getModule("android_entry").callAttr("stop_helper").toBoolean()
-                }
-            }.getOrElse { error ->
-                Log.w(loggerTag, "ProxyService stop helper failed", error)
-                false
-            }
-            Log.i(loggerTag, "ProxyService stop helper signalled=$stopped")
+            val process = helperProcess
+            process?.destroy()
+            Log.i(loggerTag, "ProxyService stop helper signalled=${process != null}")
             if (threadToJoin != null) {
                 runCatching { threadToJoin.join(helperStopJoinTimeoutMs) }
+            }
+            if (threadToJoin?.isAlive == true) {
+                process?.destroyForcibly()
+                runCatching { threadToJoin.join(2_000L) }
             }
             if (watcherToJoin != null) {
                 runCatching { watcherToJoin.join(helperStopJoinTimeoutMs) }
@@ -250,11 +262,7 @@ class ProxyService : Service() {
         if (!stopRequested && helperThread?.isAlive == true) {
             Log.w(loggerTag, "ProxyService destroyed with live helper; signalling stop")
             stopRequested = true
-            runCatching {
-                if (Python.isStarted()) {
-                    Python.getInstance().getModule("android_entry").callAttr("stop_helper")
-                }
-            }.onFailure { Log.w(loggerTag, "ProxyService onDestroy stop helper failed", it) }
+            helperProcess?.destroy()
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()

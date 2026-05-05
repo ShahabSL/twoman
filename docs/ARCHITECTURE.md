@@ -36,7 +36,7 @@ The external `data` lane carries both `pri` and `bulk` traffic. `FRAME_DATA` bul
 
 ## Transport Profiles
 
-Twoman 0.7 treats transport behavior as a backend capability instead of one
+Twoman 1.0 treats transport behavior as a backend capability instead of one
 global runtime shape.
 
 Current named profiles:

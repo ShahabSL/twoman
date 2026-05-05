@@ -69,13 +69,15 @@ Requirements:
 
 - Android SDK
 - Java 17+
-- Python 3 for Chaquopy packaging
+- Android NDK 27+
+- Go 1.22+ for the packaged helper-agent binary
 
 Build debug APK:
 
 ```bash
 export ANDROID_SDK_ROOT="$HOME/android-sdk"
 export ANDROID_HOME="$HOME/android-sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
 cd android-client
 ./gradlew assembleArm64Debug
 ```
@@ -105,6 +107,7 @@ Build signed release APKs:
 ```bash
 export ANDROID_SDK_ROOT="$HOME/android-sdk"
 export ANDROID_HOME="$HOME/android-sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
 cd android-client
 ./gradlew assembleArm64Release bundleArm64Release
 ```
