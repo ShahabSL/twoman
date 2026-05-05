@@ -43,12 +43,6 @@ Linux one-file build:
 ./desktop_client/build_linux.sh
 ```
 
-Linux frozen smoke test:
-
-```bash
-bash tests/run_desktop_frozen_e2e.sh
-```
-
 Windows one-file build:
 
 ```bat
@@ -56,12 +50,6 @@ desktop_client\\build_windows.bat
 ```
 
 Windows executables should still be built on Windows for normal release use. WSL + Wine is suitable for smoke testing.
-
-Windows frozen smoke test from WSL + Wine:
-
-```bash
-bash tests/run_desktop_windows_frozen_e2e.sh
-```
 
 ## Tests
 

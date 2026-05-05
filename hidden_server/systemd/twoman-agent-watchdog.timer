@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Twoman agent watchdog every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=twoman-agent-watchdog.service
+
+[Install]
+WantedBy=timers.target

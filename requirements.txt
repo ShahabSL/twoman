@@ -1,0 +1,2 @@
+httpx[http2,socks]>=0.27,<1
+python-socks[asyncio]>=2.4,<3

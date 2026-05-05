@@ -1,0 +1,7 @@
+[Unit]
+Description=Twoman agent watchdog
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/twoman/agent_watchdog.py --service twoman-agent.service --fd-threshold 16384 --close-wait-threshold 2048
