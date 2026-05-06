@@ -2,8 +2,13 @@
 
 - Verify the fast installer path still works:
   - `scripts/install_twoman.sh`
-  - `sudo twoman verify`
-  - `sudo twoman show-config`
+  - `sudo twoman`
+  - `sudo twoman status`
+  - `sudo twoman config`
+- Verify the headless Linux client bundle:
+  - `scripts/build_client_cli_linux.sh`
+  - `dist/client-cli/twoman-linux-amd64/twoman --help`
+  - `dist/client-cli/twoman-linux-amd64/twoman connect` without `--helper-bin` in an E2E test
 - Verify the repo deploy commands still work when used manually:
   - `scripts/deploy_host.sh`
   - `scripts/deploy_hidden_server.sh`

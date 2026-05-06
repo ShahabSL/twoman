@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
+import io
+import json
 import subprocess
 import tempfile
 import unittest
@@ -17,6 +21,8 @@ from twoman_control.installer import (
     build_broker_base_url,
     collect_install_args,
 )
+from twoman_control.defaults import build_profile_share_text
+from twoman_control.cli import _run_overview, build_parser
 from twoman_control.models import BACKEND_BRIDGE, BACKEND_NODE, BACKEND_PASSENGER, InstallState
 from twoman_control.registry import (
     DEFAULT_INSTANCE_NAME,
@@ -81,6 +87,50 @@ def _sample_state(control_root: Path) -> InstallState:
 
 
 class TwomanInstallerTests(unittest.TestCase):
+    def test_server_cli_has_clean_default_and_aliases(self) -> None:
+        parser = build_parser()
+        self.assertIsNone(parser.parse_args([]).command)
+        self.assertEqual(parser.parse_args(["status"]).command, "status")
+        self.assertEqual(parser.parse_args(["config"]).command, "config")
+        self.assertEqual(parser.parse_args(["restart"]).command, "restart")
+        self.assertEqual(parser.parse_args(["tui"]).command, "tui")
+
+    def test_server_cli_overview_is_useful_without_tui(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            control_root = Path(temp_dir)
+            state = _sample_state(control_root)
+            state.save(state_path(control_root, DEFAULT_INSTANCE_NAME))
+            registry = load_registry(control_root)
+            registry.default_instance = DEFAULT_INSTANCE_NAME
+            registry.upsert(managed_instance_from_state(control_root, state))
+            registry.save(control_root / "instances.json")
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                exit_code = _run_overview(control_root, "")
+
+        self.assertEqual(exit_code, 0)
+        text = output.getvalue()
+        self.assertIn("Twoman server control", text)
+        self.assertIn("twoman status", text)
+        self.assertIn("twoman tui", text)
+
+    def test_profile_share_text_can_pin_target_agent(self) -> None:
+        text = build_profile_share_text(
+            name="Parvaneh",
+            broker_base_url="https://host.example.com/parvaneh",
+            client_token="client-token",
+            verify_tls=True,
+            http2_ctl=False,
+            http2_data=False,
+            http_port=18092,
+            socks_port=11092,
+            target_agent_peer_label="agent-node",
+        )
+        encoded = text.split("data=", 1)[1]
+        payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * ((4 - len(encoded) % 4) % 4)))
+        self.assertEqual(payload["targetAgentPeerLabel"], "agent-node")
+
     def test_normalize_base_path_adds_leading_slash_and_removes_trailing_slash(self) -> None:
         self.assertEqual(_normalize_base_path("darvazeh"), "/darvazeh")
         self.assertEqual(_normalize_base_path("/api/v1/telemetry/"), "/api/v1/telemetry")

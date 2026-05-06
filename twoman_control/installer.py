@@ -1043,6 +1043,7 @@ def install(namespace: object) -> InstallState:
         http2_data=defaults.client_http2_data,
         http_port=defaults.client_http_port,
         socks_port=defaults.client_socks_port,
+        target_agent_peer_label=defaults.agent_peer_id,
     )
 
     state = InstallState(

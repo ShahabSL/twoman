@@ -58,6 +58,10 @@ jobs:
         working-directory: helper-agent
         run: go test ./...
 
+      - name: Run client CLI tests
+        working-directory: client-cli
+        run: go test ./...
+
       - name: Verify Node broker parses
         run: |
           node --check host/node_selector/broker.js
@@ -73,11 +77,17 @@ jobs:
             scripts/deploy_host_node_selector.sh \
             scripts/deploy_host_passenger.sh \
             scripts/start_client.sh \
+            scripts/build_client_cli_linux.sh \
+            client-cli/install-linux.sh \
             tests/run_e2e_go_node_http.sh \
+            tests/run_client_cli_e2e.sh \
             tests/run_desktop_client_e2e.sh
 
       - name: Run Go node backend smoke test
         run: bash tests/run_e2e_go_node_http.sh
+
+      - name: Run client CLI end-to-end test
+        run: bash tests/run_client_cli_e2e.sh
 
       - name: Run desktop TUI tests
         run: python3 -m unittest tests/test_desktop_client_tui.py

@@ -66,7 +66,7 @@ def build_generated_defaults(
         admin_script_name=f"{passenger_handle}_negahban.php",
         client_token=_token("twoman-client"),
         agent_token=_token("twoman-agent"),
-        agent_peer_id=f"agent-{secrets.token_hex(4)}",
+        agent_peer_id="agent-main" if instance_handle == DEFAULT_INSTANCE_NAME else f"agent-{instance_handle}",
         hidden_install_root=hidden_install_root,
         hidden_service_name=hidden_service_name,
         hidden_service_user="twoman",
@@ -86,11 +86,13 @@ def build_profile_share_text(
     http2_data: bool,
     http_port: int,
     socks_port: int,
+    target_agent_peer_label: str = "",
 ) -> str:
     payload = {
         "name": name,
         "brokerBaseUrl": broker_base_url,
         "clientToken": client_token,
+        "targetAgentPeerLabel": target_agent_peer_label,
         "verifyTls": verify_tls,
         "http2Ctl": http2_ctl,
         "http2Data": http2_data,

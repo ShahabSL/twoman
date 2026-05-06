@@ -58,12 +58,13 @@ non-interactive example.
 
 After deployment:
 
-- `sudo twoman` opens the management TUI
+- `sudo twoman` prints a fast server-control overview and common commands
+- `sudo twoman tui` opens the management TUI
 - `sudo twoman list` shows every managed tunnel instance under the shared control root
 - `sudo twoman set-default <instance>` changes which instance `sudo twoman` manages by default
-- `sudo twoman verify` runs a non-interactive health check
+- `sudo twoman status` or `sudo twoman verify` runs a non-interactive health check
 - `sudo twoman logs` prints the hidden-agent journal tail
-- `sudo twoman --instance <name> show-config` prints the client import text for one managed tunnel
+- `sudo twoman --instance <name> config` prints the client import text for one managed tunnel
 - `sudo twoman restart-upstream-proxy` restarts managed WireProxy when that route is enabled
 
 Multi-instance note:
@@ -83,6 +84,39 @@ when the installer asks about a local WARP / upstream proxy and keep the default
 If you also want the final public egress IP to be the WARP exit instead of the
 hidden server IP, enable the separate hidden outbound proxy option and point it
 at the same `socks5h://127.0.0.1:1280` listener.
+
+## Client Quickstart
+
+Twoman clients all consume the same `twoman://profile?data=...` import text
+printed by `sudo twoman config` on the server.
+
+Android:
+
+- install the release APK
+- paste or open the `twoman://...` import text
+- choose Proxy mode for app-level proxying or VPN mode for whole-device routing
+
+Desktop:
+
+- install the Linux or Windows desktop release
+- import the same `twoman://...` text
+- connect, then choose SOCKS, HTTP, system proxy, or tunnel mode depending on
+  the platform
+
+Headless Linux:
+
+```bash
+tar -xzf twoman-cli-linux-amd64.tar.gz
+cd twoman-linux-amd64
+sudo ./install.sh
+twoman import 'twoman://profile?data=...'
+twoman connect
+twoman status
+twoman disconnect
+```
+
+The headless client installs `twoman-helper-agent` as a sidecar and discovers it
+automatically; normal users should not need helper paths or runtime flags.
 
 ## Cloudflare Fronting
 
@@ -145,6 +179,7 @@ Start here:
 - `android-client/`: Android client with saved profiles, share/import profile text, proxy mode, and VPN mode
 - `desktop_app/`: Tauri desktop GUI that launches the Go helper sidecar
 - `desktop_client/`: Python desktop TUI/control shell that launches the Go helper-agent process
+- `client-cli/`: lightweight Linux CLI that imports Twoman profiles and runs the Go helper without a TUI
 - `host/node_selector/broker.js`: CloudLinux Node selector broker for managed-host deployments
 - `host/runtime/http_broker_daemon.py`: asyncio broker for bridge-style cPanel deployments
 - `host/app/bridge_runtime.php`: PHP bootstrap that starts and supervises the bridge broker
@@ -257,6 +292,24 @@ export TWOMAN_CLIENT_TOKEN='replace-with-client-token'
 This starts the helper in the foreground. `Ctrl+C` stops it cleanly.
 By default, the helper writes rotating client logs to `local_client/logs/helper.log`.
 Override that location with `TWOMAN_LOG_PATH=/path/to/helper.log`.
+
+For a polished headless Linux client workflow, use the `twoman` client bundle:
+
+```bash
+scripts/build_client_cli_linux.sh
+sudo dist/client-cli/twoman-linux-amd64/install.sh
+twoman import 'twoman://profile?data=...'
+twoman connect
+twoman status
+twoman disconnect
+```
+
+See [docs/CLIENT_CLI.md](docs/CLIENT_CLI.md).
+
+Advanced multi-exit profiles can set `targetAgentPeerLabel` in the shared
+`twoman://profile?...` import text. Empty means broker-selected failover; a
+value such as `agent-main` or `agent-nima` pins that profile to a specific
+hidden exit.
 
 Default helper ports:
 - HTTP proxy: `127.0.0.1:18092`

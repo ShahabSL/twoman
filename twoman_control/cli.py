@@ -10,7 +10,7 @@ from twoman_control.registry import load_registry, resolve_instance_name, set_de
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="twoman")
-    parser.add_argument("--instance", dest="global_instance", default="")
+    parser.add_argument("--instance", dest="global_instance", default="", help="managed instance name")
     subparsers = parser.add_subparsers(dest="command")
 
     install_parser = subparsers.add_parser("install", help="Run the Twoman deployment wizard")
@@ -56,16 +56,18 @@ def build_parser() -> argparse.ArgumentParser:
     tls_group.add_argument("--no-verify-tls", dest="verify_tls", action="store_false")
     install_parser.set_defaults(verify_tls=None)
 
-    for name, help_text in [
-        ("verify", "Run a non-interactive health check"),
-        ("logs", "Print the hidden-agent journal tail"),
-        ("show-config", "Print the Twoman client import text"),
-        ("restart-agent", "Restart the hidden-agent service"),
-        ("restart-upstream-proxy", "Restart the managed hidden-server route proxy"),
-        ("run-watchdog", "Run the watchdog service immediately"),
-        ("redeploy-host", "Redeploy the public host backend with the saved state"),
+    subparsers.add_parser("tui", help="Open the interactive server management UI")
+
+    for name, aliases, help_text in [
+        ("verify", ["status"], "Run a non-interactive health check"),
+        ("logs", [], "Print the hidden-agent journal tail"),
+        ("show-config", ["config"], "Print the Twoman client import text"),
+        ("restart-agent", ["restart"], "Restart the hidden-agent service"),
+        ("restart-upstream-proxy", [], "Restart the managed hidden-server route proxy"),
+        ("run-watchdog", [], "Run the watchdog service immediately"),
+        ("redeploy-host", [], "Redeploy the public host backend with the saved state"),
     ]:
-        action_parser = subparsers.add_parser(name, help=help_text)
+        action_parser = subparsers.add_parser(name, aliases=aliases, help=help_text)
         action_parser.add_argument("--instance", default="")
     purge_parser = subparsers.add_parser("purge", help="Purge an installed Twoman instance")
     purge_parser.add_argument("--instance", default="")
@@ -88,6 +90,11 @@ def _selected_instance(args: argparse.Namespace) -> str:
 
 
 def _run_action(controller: ManagerController, command: str) -> int:
+    command = {
+        "status": "verify",
+        "config": "show-config",
+        "restart": "restart-agent",
+    }.get(command, command)
     if command == "verify":
         result = controller.verify()
     elif command == "logs":
@@ -124,10 +131,47 @@ def _run_list(control_root: Path) -> int:
     return 0
 
 
+def _run_overview(control_root: Path, instance_name: str) -> int:
+    from twoman_control.manager import ManagerController
+
+    registry = load_registry(control_root)
+    if not registry.instances:
+        print("Twoman server control")
+        print("No managed instances are installed.")
+        print("")
+        print("Start here:")
+        print("  sudo twoman install")
+        print("")
+        print("Other commands:")
+        print("  twoman --help")
+        return 0
+
+    controller = ManagerController(control_root, instance_name or None)
+    state = controller.state
+    default_marker = "default" if state.instance_name == registry.default_instance else f"default={registry.default_instance}"
+    print("Twoman server control")
+    print(f"Instance:       {state.instance_name} ({default_marker})")
+    print(f"Backend:        {state.backend}")
+    print(f"Broker:         {state.broker_base_url}")
+    print(f"Hidden service: {state.hidden_service_name}")
+    print(f"Hidden route:   {controller.hidden_route_text()}")
+    print(f"Outbound route: {controller.outbound_route_text()}")
+    print("")
+    print("Common commands:")
+    print("  twoman status       Run health checks")
+    print("  twoman logs         Show hidden-agent logs")
+    print("  twoman config       Print client import text")
+    print("  twoman list         List managed instances")
+    print("  twoman tui          Open the interactive UI")
+    print("")
+    print("Use --instance <name> before the command to target another instance.")
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    command = args.command or "tui"
+    command = args.command or "overview"
     if command == "install":
         install(args)
         return 0
@@ -158,6 +202,8 @@ def main() -> int:
         set_default_instance(control_root, args.instance_name)
         print(f"default instance set to {resolve_instance_name(control_root, args.instance_name)}")
         return 0
+    if command == "overview":
+        return _run_overview(control_root, instance_name)
     if command != "tui":
         controller = ManagerController(control_root, instance_name or None)
         return _run_action(controller, command)

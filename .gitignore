@@ -20,3 +20,4 @@ desktop_app/build/
 desktop_client/build/
 desktop_client/dist/
 host/node_selector/node_modules/
+dist/

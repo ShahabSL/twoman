@@ -196,7 +196,17 @@ Run:
 sudo twoman
 ```
 
-That opens the Textual TUI. The TUI exposes:
+That prints the selected instance, broker URL, hidden service, routes, and the
+most common commands. This keeps the default command safe in SSH and
+non-interactive terminals.
+
+Open the Textual TUI explicitly when you want the interactive server console:
+
+```bash
+sudo twoman tui
+```
+
+The TUI exposes:
 
 - health verification
 - hidden-agent restart
@@ -213,10 +223,10 @@ Non-interactive commands are also available:
 ```bash
 sudo twoman list
 sudo twoman set-default node
-sudo twoman verify
+sudo twoman status
 sudo twoman logs
-sudo twoman --instance bridge show-config
-sudo twoman restart-agent
+sudo twoman --instance bridge config
+sudo twoman restart
 sudo twoman restart-upstream-proxy
 sudo twoman run-watchdog
 sudo twoman redeploy-host
