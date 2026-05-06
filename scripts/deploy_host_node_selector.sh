@@ -150,10 +150,12 @@ TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_HELPER_DATA_UPLOAD_FLUSH
 TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS:-0.006}"
 TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE="${TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE:-true}"
 TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE="${TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE:-true}"
-# Go dataplane defaults to the measured fast cPanel profile: collapsed data
-# lanes and short bounded polls. Operators can override these envs for rollback.
-TWOMAN_STREAMING_DATA_DOWN_HELPER="${TWOMAN_STREAMING_DATA_DOWN_HELPER:-true}"
-TWOMAN_STREAMING_DATA_DOWN_AGENT="${TWOMAN_STREAMING_DATA_DOWN_AGENT:-true}"
+# Go dataplane defaults to the measured cPanel-safe profile: collapsed data
+# lanes with short bounded polls. Passenger/cPanel often buffers chunked
+# streaming responses, which delays OPEN/OPEN_OK long enough for clients to
+# time out even though peers appear connected.
+TWOMAN_STREAMING_DATA_DOWN_HELPER="${TWOMAN_STREAMING_DATA_DOWN_HELPER:-false}"
+TWOMAN_STREAMING_DATA_DOWN_AGENT="${TWOMAN_STREAMING_DATA_DOWN_AGENT:-false}"
 TWOMAN_WEBSOCKET_PUBLIC_ENABLED="${TWOMAN_WEBSOCKET_PUBLIC_ENABLED:-false}"
 
 json_get() {

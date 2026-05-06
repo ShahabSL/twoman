@@ -110,8 +110,8 @@ android {
         applicationId = "com.twoman.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.0.1"
+        versionCode = 15
+        versionName = "1.0.2"
         buildConfigField("String", "RUNTIME_LOG_TAG", quoteForGradle(androidLogTag))
         buildConfigField("String", "VPN_SESSION_NAME", quoteForGradle(androidVpnSessionName))
         resValue("string", "runtime_app_name", quoteForGradle(androidAppLabel))

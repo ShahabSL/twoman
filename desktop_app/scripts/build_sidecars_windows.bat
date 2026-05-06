@@ -17,16 +17,28 @@ mkdir "%DIST_DIR%" 2>nul
 mkdir "%STAGE_DIR%"
 mkdir "%TUNNEL_DIR%"
 
-where go >nul 2>nul
-if errorlevel 1 (
-  echo go is required to build the Twoman Go helper sidecar
-  exit /b 1
+if not "%TWOMAN_PREBUILT_HELPER_EXE%"=="" (
+  if not exist "%TWOMAN_PREBUILT_HELPER_EXE%" (
+    echo TWOMAN_PREBUILT_HELPER_EXE does not exist: %TWOMAN_PREBUILT_HELPER_EXE%
+    exit /b 1
+  )
+  copy /Y "%TWOMAN_PREBUILT_HELPER_EXE%" "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" >nul
+) else (
+  where go >nul 2>nul
+  if errorlevel 1 (
+    if exist "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" (
+      echo Reusing existing Twoman Go helper sidecar: %DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe
+    ) else (
+      echo go is required to build the Twoman Go helper sidecar
+      exit /b 1
+    )
+  ) else (
+    pushd "%ROOT%\helper-agent"
+    go build -trimpath -ldflags "-s -w" -o "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" .
+    if errorlevel 1 exit /b 1
+    popd
+  )
 )
-
-pushd "%ROOT%\helper-agent"
-go build -trimpath -ldflags "-s -w" -o "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" .
-if errorlevel 1 exit /b 1
-popd
 
 if "%TWOMAN_WINDOWS_PYTHON%"=="" (
   set TWOMAN_WINDOWS_PYTHON=py -3

@@ -33,8 +33,8 @@ cat > "$TMP_DIR/broker-config.json" <<'JSON'
   "down_wait_ms": { "ctl": 75, "data": 75 },
   "helper_down_combined_data_lane": true,
   "agent_down_combined_data_lane": true,
-  "streaming_data_down_helper": true,
-  "streaming_data_down_agent": true,
+  "streaming_data_down_helper": false,
+  "streaming_data_down_agent": false,
   "base_uri": "/api/v1/telemetry"
 }
 JSON

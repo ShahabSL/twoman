@@ -14,8 +14,8 @@
   "down_wait_ms": { "ctl": 75, "data": 75 },
   "helper_down_combined_data_lane": true,
   "agent_down_combined_data_lane": true,
-  "streaming_data_down_helper": true,
-  "streaming_data_down_agent": true,
+  "streaming_data_down_helper": false,
+  "streaming_data_down_agent": false,
   "websocket_public_enabled": false,
   "lane_profiles": {
     "ctl": { "max_bytes": 4096, "max_frames": 8, "hold_ms": 1, "pad_min": 512 },

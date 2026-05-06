@@ -748,7 +748,10 @@ func (t *laneTransport) doDownSession(lane string, workerIdx int) error {
 	if baseCtx == nil {
 		baseCtx = context.Background()
 	}
-	req, err := http.NewRequestWithContext(baseCtx, "GET", reqURL, nil)
+	reqCtx, cancel := context.WithTimeout(baseCtx, t.downRequestTimeout())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "GET", reqURL, nil)
 	if err != nil {
 		return err
 	}
@@ -906,6 +909,7 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 		MaxIdleConns:        50,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     120 * time.Second,
+		TLSHandshakeTimeout: 15 * time.Second,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: !t.cfg.VerifyTLS},
 		DialContext:         baseDialer.DialContext,
 		DisableKeepAlives:   false,
@@ -927,6 +931,17 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 			tr.DialContext = dialContext
 		}
 	}
+	if direction == "down" {
+		tr.ResponseHeaderTimeout = t.downResponseHeaderTimeout()
+		if t.cfg.UpstreamProxyURL != "" {
+			// WARP/WireProxy can leave dead local SOCKS connections half-closed.
+			// Down-polls are latency-sensitive and cheap, so do not reuse proxied
+			// sockets here; uploads still keep their pooling for throughput.
+			tr.DisableKeepAlives = true
+			tr.MaxIdleConnsPerHost = 0
+			tr.IdleConnTimeout = 0
+		}
+	}
 
 	timeout := http.DefaultClient.Timeout
 	if direction == "down" {
@@ -936,6 +951,30 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 		timeout = t.httpTimeout
 	}
 	return &http.Client{Transport: tr, Timeout: timeout}
+}
+
+func (t *laneTransport) downResponseHeaderTimeout() time.Duration {
+	timeout := t.downReadTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	if timeout < 5*time.Second {
+		timeout = 5 * time.Second
+	}
+	return timeout
+}
+
+func (t *laneTransport) downRequestTimeout() time.Duration {
+	headerTimeout := t.downResponseHeaderTimeout()
+	bodyTimeout := t.downReadTimeout
+	if bodyTimeout <= 0 {
+		bodyTimeout = 10 * time.Second
+	}
+	sessionTimeout := t.downStreamMaxSession
+	if sessionTimeout <= 0 {
+		sessionTimeout = 60 * time.Second
+	}
+	return headerTimeout + bodyTimeout + sessionTimeout + 5*time.Second
 }
 
 // ---- Replay queue ----------------------------------------------------------
