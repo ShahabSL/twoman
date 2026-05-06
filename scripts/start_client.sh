@@ -30,6 +30,7 @@ TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-8}"
 TWOMAN_AUTH_MODE="${TWOMAN_AUTH_MODE:-bearer}"
 TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED="${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED:-false}"
 TWOMAN_BINARY_MEDIA_TYPE="${TWOMAN_BINARY_MEDIA_TYPE:-image/webp}"
+TWOMAN_TARGET_AGENT_PEER_LABEL="${TWOMAN_TARGET_AGENT_PEER_LABEL:-}"
 if [ -z "${TWOMAN_ROUTE_TEMPLATE:-}" ]; then
   TWOMAN_ROUTE_TEMPLATE='/{lane}/{direction}'
 fi
@@ -56,6 +57,7 @@ if [ ! -f "${CONFIG_PATH}" ]; then
   "transport_profile": "auto",
   "broker_base_url": "${TWOMAN_BROKER_BASE_URL}",
   "client_token": "${TWOMAN_CLIENT_TOKEN}",
+  "target_agent_peer_label": "${TWOMAN_TARGET_AGENT_PEER_LABEL}",
   "auth_mode": "${TWOMAN_AUTH_MODE}",
   "legacy_custom_headers_enabled": ${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED},
   "binary_media_type": "${TWOMAN_BINARY_MEDIA_TYPE}",

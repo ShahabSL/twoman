@@ -12,6 +12,7 @@ export type ClientProfile = {
   name: string;
   brokerBaseUrl: string;
   clientToken: string;
+  targetAgentPeerLabel: string;
   verifyTls: boolean;
   http2Ctl: boolean;
   http2Data: boolean;

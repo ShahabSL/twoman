@@ -33,6 +33,7 @@
     <string name="hint_import_text">Import text</string>
     <string name="hint_broker_url">Broker URL</string>
     <string name="hint_client_token">Client token</string>
+    <string name="hint_target_agent">Target agent label (optional)</string>
     <string name="hint_http_port">HTTP port</string>
     <string name="hint_socks_port">SOCKS port</string>
     <string name="label_verify_tls">Verify TLS</string>

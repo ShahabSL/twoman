@@ -12,7 +12,7 @@ from pathlib import Path
 from twoman_crypto import TransportCipher
 from twoman_http import build_connection_headers, expected_binary_media_type
 from twoman_protocol import FRAME_HEADER, FRAME_PING, Frame, FrameDecoder, encode_frame
-from twoman_protocol import FRAME_OPEN, make_open_payload
+from twoman_protocol import FRAME_OPEN, FRAME_OPEN_FAIL, make_open_payload, parse_error_payload
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -180,6 +180,90 @@ class NodeSelectorRuntimeTests(unittest.TestCase):
             health = broker.get_json("/health")
             self.assertEqual(health["agent_peer_label"], "agent-main")
             self.assertEqual(health["agent_session_id"], "new-session")
+
+    def test_node_broker_routes_open_to_target_agent_peer_label(self) -> None:
+        broker = _NodeBrokerFixture(
+            {
+                "client_tokens": ["client-token"],
+                "agent_tokens": ["agent-token"],
+                "binary_media_type": "image/webp",
+                "health_public": True,
+                "debug_stats_enabled": True,
+                "down_wait_ms": {"ctl": 50, "data": 50},
+                "preferred_agent_peer_label": "agent-main",
+            }
+        )
+        with broker:
+            broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-main", session="main-session")
+            broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-nima", session="nima-session")
+            open_frame = encode_frame(
+                Frame(
+                    FRAME_OPEN,
+                    stream_id=17,
+                    payload=make_open_payload("example.com", 443, target_agent_peer_label="agent-nima"),
+                )
+            )
+
+            status, payload = broker.request(
+                "POST",
+                "/ctl/up",
+                "client-token",
+                "helper",
+                _encrypt("client-token", open_frame),
+                peer="helper-bench",
+                session="helper-session",
+                extra_headers={"X-Twoman-Target-Agent": "agent-nima"},
+            )
+
+            self.assertEqual(status, 200, payload)
+            streams = broker.get_json("/health")["stream_details"]
+            self.assertEqual(streams[0]["agent_session_id"], "nima-session")
+
+    def test_node_broker_fails_targeted_open_when_agent_unavailable(self) -> None:
+        broker = _NodeBrokerFixture(
+            {
+                "client_tokens": ["client-token"],
+                "agent_tokens": ["agent-token"],
+                "binary_media_type": "image/webp",
+                "health_public": True,
+                "down_wait_ms": {"ctl": 50, "data": 50},
+            }
+        )
+        with broker:
+            broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-main", session="main-session")
+            open_frame = encode_frame(
+                Frame(
+                    FRAME_OPEN,
+                    stream_id=17,
+                    payload=make_open_payload("example.com", 443, target_agent_peer_label="agent-missing"),
+                )
+            )
+            status, payload = broker.request(
+                "POST",
+                "/ctl/up",
+                "client-token",
+                "helper",
+                _encrypt("client-token", open_frame),
+                peer="helper-bench",
+                session="helper-session",
+                extra_headers={"X-Twoman-Target-Agent": "agent-missing"},
+            )
+            self.assertEqual(status, 200, payload)
+
+            status, payload = broker.request(
+                "GET",
+                "/ctl/down",
+                "client-token",
+                "helper",
+                b"",
+                peer="helper-bench",
+                session="helper-session",
+                extra_headers={"X-Twoman-Target-Agent": "agent-missing"},
+            )
+            self.assertEqual(status, 200, payload)
+            frames = FrameDecoder().feed(_decrypt("client-token", payload))
+            self.assertEqual(frames[0].type_id, FRAME_OPEN_FAIL)
+            self.assertIn("target agent unavailable", parse_error_payload(frames[0].payload))
 
     def test_node_broker_drops_same_label_stale_helper_session(self) -> None:
         broker = _NodeBrokerFixture(

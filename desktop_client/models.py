@@ -23,6 +23,7 @@ class ClientProfile:
     broker_base_url: str
     client_token: str
     id: str = field(default_factory=_new_id)
+    target_agent_peer_label: str = ""
     verify_tls: bool = False
     http2_ctl: bool = True
     http2_data: bool = False
@@ -53,6 +54,11 @@ class ClientProfile:
             client_token=str(
                 payload.get("client_token")
                 or payload.get("clientToken")
+                or ""
+            ).strip(),
+            target_agent_peer_label=str(
+                payload.get("target_agent_peer_label")
+                or payload.get("targetAgentPeerLabel")
                 or ""
             ).strip(),
             verify_tls=bool(payload.get("verify_tls", payload.get("verifyTls", False))),
@@ -105,6 +111,7 @@ class ClientProfile:
             "transport_profile": "auto",
             "broker_base_url": self.broker_base_url,
             "client_token": self.client_token,
+            "target_agent_peer_label": self.target_agent_peer_label,
             "listen_host": "127.0.0.1",
             "http_listen_port": self.http_port,
             "socks_listen_port": self.socks_port,
@@ -135,6 +142,7 @@ class ClientProfile:
             "name": self.name,
             "brokerBaseUrl": self.broker_base_url,
             "clientToken": self.client_token,
+            "targetAgentPeerLabel": self.target_agent_peer_label,
             "verifyTls": self.verify_tls,
             "http2Ctl": self.http2_ctl,
             "http2Data": self.http2_data,

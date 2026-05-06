@@ -9,6 +9,7 @@ data class ClientProfile(
     val name: String,
     val brokerBaseUrl: String,
     val clientToken: String,
+    val targetAgentPeerLabel: String = "",
     val verifyTls: Boolean = false,
     val http2Ctl: Boolean = true,
     val http2Data: Boolean = false,
@@ -31,6 +32,7 @@ data class ClientProfile(
         put("name", name)
         put("brokerBaseUrl", brokerBaseUrl)
         put("clientToken", clientToken)
+        put("targetAgentPeerLabel", targetAgentPeerLabel)
         put("verifyTls", verifyTls)
         put("http2Ctl", http2Ctl)
         put("http2Data", http2Data)
@@ -54,6 +56,7 @@ data class ClientProfile(
         put("transport_profile", "auto")
         put("broker_base_url", brokerBaseUrl)
         put("client_token", clientToken)
+        put("target_agent_peer_label", targetAgentPeerLabel)
         put("listen_host", "127.0.0.1")
         put("http_listen_hosts", org.json.JSONArray(listOf("127.0.0.1", "::1")))
         put(
@@ -106,6 +109,7 @@ data class ClientProfile(
             put("name", name)
             put("brokerBaseUrl", brokerBaseUrl)
             put("clientToken", clientToken)
+            put("targetAgentPeerLabel", targetAgentPeerLabel)
             put("verifyTls", verifyTls)
             put("http2Ctl", http2Ctl)
             put("http2Data", http2Data)
@@ -139,6 +143,9 @@ data class ClientProfile(
             name = json.optString("name"),
             brokerBaseUrl = json.optString("brokerBaseUrl"),
             clientToken = json.optString("clientToken"),
+            targetAgentPeerLabel = json.optString("targetAgentPeerLabel").ifBlank {
+                json.optString("target_agent_peer_label")
+            },
             verifyTls = json.optBoolean("verifyTls", false),
             http2Ctl = json.optBoolean("http2Ctl", true),
             http2Data = json.optBoolean("http2Data", false),

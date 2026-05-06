@@ -2,6 +2,7 @@
   "broker_base_url": "https://host.example.com/parvaneh",
   "upstream_proxy_url": "",
   "client_token": "replace-with-client-token",
+  "target_agent_peer_label": "",
   "auth_mode": "bearer",
   "legacy_custom_headers_enabled": false,
   "binary_media_type": "image/webp",

@@ -44,6 +44,8 @@ pub struct ClientProfile {
     pub name: String,
     pub broker_base_url: String,
     pub client_token: String,
+    #[serde(default)]
+    pub target_agent_peer_label: String,
     pub verify_tls: bool,
     pub http2_ctl: bool,
     pub http2_data: bool,

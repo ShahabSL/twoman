@@ -174,6 +174,7 @@ class ProfileEditorScreen(ModalScreen[ClientProfile | None]):
             yield Input(value=profile.name, placeholder="Name", id="profile-name")
             yield Input(value=profile.broker_base_url, placeholder="Broker URL", id="profile-url")
             yield Input(value=profile.client_token, placeholder="Client token", password=True, id="profile-token")
+            yield Input(value=profile.target_agent_peer_label, placeholder="Target agent label (optional)", id="profile-target-agent")
             yield Input(value=str(profile.http_port), placeholder="HTTP port", id="profile-http-port", type="number")
             yield Input(value=str(profile.socks_port), placeholder="SOCKS port", id="profile-socks-port", type="number")
             yield Checkbox("Verify TLS", value=profile.verify_tls, id="profile-verify-tls")
@@ -195,6 +196,7 @@ class ProfileEditorScreen(ModalScreen[ClientProfile | None]):
             name=self.query_one("#profile-name", Input).value.strip(),
             broker_base_url=self.query_one("#profile-url", Input).value.strip(),
             client_token=self.query_one("#profile-token", Input).value.strip(),
+            target_agent_peer_label=self.query_one("#profile-target-agent", Input).value.strip(),
             verify_tls=self.query_one("#profile-verify-tls", Checkbox).value,
             http2_ctl=self.query_one("#profile-http2-ctl", Checkbox).value,
             http2_data=self.query_one("#profile-http2-data", Checkbox).value,

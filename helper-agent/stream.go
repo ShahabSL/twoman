@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -92,10 +93,14 @@ func (s *ProxyStream) setClosed() {
 
 // open sends FRAME_OPEN and waits for OPEN_OK / OPEN_FAIL (30 s timeout).
 func (s *ProxyStream) open(ctx context.Context) error {
+	targetAgentPeerLabel := strings.TrimSpace(s.rt.cfg.TargetAgentPeerLabel)
+	if len([]byte(targetAgentPeerLabel)) > 65535 {
+		return fmt.Errorf("target agent label is too long")
+	}
 	frame := &Frame{
 		TypeID:   FrameOpen,
 		StreamID: s.id,
-		Payload:  makeOpenPayload(s.targetHost, s.targetPort),
+		Payload:  makeOpenPayload(s.targetHost, s.targetPort, targetAgentPeerLabel),
 	}
 	if err := s.rt.transport.sendFrame(s.controlLane(), frame); err != nil {
 		return err

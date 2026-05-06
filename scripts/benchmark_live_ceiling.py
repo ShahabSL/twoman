@@ -40,13 +40,30 @@ def run(args: list[str], *, env: dict[str, str] | None = None, timeout: float | 
 
 def parse_server_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
+    positional: list[str] = []
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
             continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("'\"")
-    required = {"ip", "password", "port"}
+        if "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip("'\"")
+        else:
+            positional.append(line.strip().strip("'\""))
+    if positional and not values:
+        values["ip"] = positional[0]
+        if len(positional) >= 3 and positional[1].isdigit():
+            values["port"] = positional[1]
+            values["password"] = positional[2]
+            values["user"] = "root"
+        elif len(positional) >= 3:
+            values["user"] = positional[1]
+            values["password"] = positional[2]
+            values["port"] = "22"
+        else:
+            raise SystemExit(f"server env positional format must be ip/user/password or ip/port/password: {path}")
+    values.setdefault("user", "root")
+    required = {"ip", "password", "port", "user"}
     missing = required - values.keys()
     if missing:
         raise SystemExit(f"server env missing required keys: {', '.join(sorted(missing))}")
@@ -57,6 +74,7 @@ def cpanel_json(base_url: str, username: str, password: str, endpoint: str, para
     args = [
         "curl",
         "-sk",
+        "-L",
         "--connect-timeout",
         "15",
         "--max-time",
@@ -99,6 +117,7 @@ def load_host_config(base_url: str, username: str, password: str, home: str, nod
 class SSH:
     def __init__(self, server: dict[str, str]) -> None:
         self.host = server["ip"]
+        self.user = server.get("user") or "root"
         self.password = server["password"]
         self.port = server["port"]
 
@@ -114,7 +133,7 @@ class SSH:
             "StrictHostKeyChecking=no",
             "-o",
             "ConnectTimeout=15",
-            f"root@{self.host}",
+            f"{self.user}@{self.host}",
             command,
         ]
         return run(args, timeout=timeout)
@@ -125,7 +144,7 @@ def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_confi
     env.update(
         {
             "TWOMAN_SERVER_HOST": server["ip"],
-            "TWOMAN_SERVER_USER": "root",
+            "TWOMAN_SERVER_USER": server.get("user") or "root",
             "TWOMAN_SERVER_PORT": server["port"],
             "TWOMAN_SERVER_PASSWORD": server["password"],
             "TWOMAN_BROKER_BASE_URL": args.broker_base_url,
@@ -154,12 +173,12 @@ def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_confi
             print(f"deploy: {line}")
 
 
-def set_remote_agent_variant(ssh: SSH, workers: int, batch: int, flush_delay: float) -> None:
+def set_remote_agent_variant(ssh: SSH, config_path: str, service_name: str, workers: int, batch: int, flush_delay: float) -> None:
     script = f"""
 set -euo pipefail
 python3 - <<'PY'
 import json
-path = "/opt/twoman/config.json"
+path = {json.dumps(config_path)}
 with open(path, "r", encoding="utf-8") as handle:
     cfg = json.load(handle)
 cfg.setdefault("upload_profiles", {{}}).setdefault("data", {{}})
@@ -170,8 +189,8 @@ with open(path, "w", encoding="utf-8") as handle:
     json.dump(cfg, handle, indent=2)
     handle.write("\\n")
 PY
-systemctl restart twoman-agent.service
-systemctl is-active twoman-agent.service
+systemctl restart {shlex.quote(service_name)}
+systemctl is-active {shlex.quote(service_name)}
 """
     proc = ssh.run(script, timeout=45)
     if "active" not in proc.stdout:
@@ -179,12 +198,13 @@ systemctl is-active twoman-agent.service
     time.sleep(4.0)
 
 
-def remote_raw_upload_matrix(ssh: SSH, broker_base_url: str, token: str, size_bytes: int, concurrencies: list[int]) -> list[dict[str, Any]]:
+def remote_raw_upload_matrix(ssh: SSH, broker_base_url: str, token: str, size_bytes: int, concurrencies: list[int], proxy_url: str) -> list[dict[str, Any]]:
     payload = {
         "url": f"{broker_base_url.rstrip('/')}/upload_probe",
         "token": token,
         "size_bytes": size_bytes,
         "concurrencies": concurrencies,
+        "proxy_url": proxy_url,
     }
     remote = r"""
 import json, os, subprocess, sys, tempfile, time
@@ -199,15 +219,18 @@ for concurrency in payload["concurrencies"]:
     procs = []
     started = time.monotonic()
     for _ in range(int(concurrency)):
-        procs.append(subprocess.Popen([
-            "curl", "-sk", "--proxy", "socks5h://127.0.0.1:1280",
+        command = [
+            "curl", "-sk",
             "--connect-timeout", "20", "--max-time", "180",
             "-H", "Authorization: Bearer " + payload["token"],
             "--data-binary", "@" + body_path,
             "-o", "/dev/null",
             "-w", "%{http_code} %{time_total} %{speed_upload}",
-            payload["url"],
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+        ]
+        if payload.get("proxy_url"):
+            command.extend(["--proxy", payload["proxy_url"]])
+        command.append(payload["url"])
+        procs.append(subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
     samples = []
     ok = 0
     for proc in procs:
@@ -242,7 +265,7 @@ print(json.dumps(results))
             ssh.port,
             "-o",
             "StrictHostKeyChecking=no",
-            f"root@{ssh.host}",
+            f"{ssh.user}@{ssh.host}",
             command,
         ],
         input=json.dumps(payload),
@@ -403,6 +426,8 @@ def main() -> int:
     parser.add_argument("--cpanel-home", default="")
     parser.add_argument("--node-dir", default="parvaneh_node")
     parser.add_argument("--broker-base-url", default="https://mirageclub.ir/parvaneh")
+    parser.add_argument("--client-token", default=os.environ.get("TWOMAN_CLIENT_TOKEN", ""))
+    parser.add_argument("--agent-token", default=os.environ.get("TWOMAN_AGENT_TOKEN", ""))
     parser.add_argument("--skip-deploy", action="store_true")
     parser.add_argument("--skip-raw", action="store_true")
     parser.add_argument("--skip-tunnel", action="store_true")
@@ -411,15 +436,22 @@ def main() -> int:
     parser.add_argument("--download-url", default="")
     parser.add_argument("--variants", default="")
     parser.add_argument("--raw-concurrency", default="1,2,3,4,6,8")
+    parser.add_argument("--raw-upload-proxy-url", default="socks5h://127.0.0.1:1280")
+    parser.add_argument("--remote-agent-config", default="/opt/twoman/config.json")
+    parser.add_argument("--remote-agent-service", default="twoman-agent.service")
     parser.add_argument("--output-dir", default="output")
     args = parser.parse_args()
-    for name in ("cpanel_base_url", "cpanel_username", "cpanel_password"):
-        if not getattr(args, name):
-            raise SystemExit(f"--{name.replace('_', '-')} or TWOMAN_{name.upper()} is required")
-
     server = parse_server_env(ROOT / args.server_env)
-    home = args.cpanel_home or f"/home/{args.cpanel_username}"
-    host_config = load_host_config(args.cpanel_base_url, args.cpanel_username, args.cpanel_password, home, args.node_dir)
+    if args.client_token and args.agent_token:
+        host_config = {"client_tokens": [args.client_token], "agent_tokens": [args.agent_token]}
+    else:
+        for name in ("cpanel_base_url", "cpanel_username", "cpanel_password"):
+            if not getattr(args, name):
+                raise SystemExit(
+                    f"--{name.replace('_', '-')} or TWOMAN_{name.upper()} is required when explicit tokens are not provided"
+                )
+        home = args.cpanel_home or f"/home/{args.cpanel_username}"
+        host_config = load_host_config(args.cpanel_base_url, args.cpanel_username, args.cpanel_password, home, args.node_dir)
     client_token = host_config["client_tokens"][0]
     ssh = SSH(server)
 
@@ -437,6 +469,9 @@ def main() -> int:
         "raw_upload_bytes_per_request": args.raw_upload_bytes,
         "tunnel_bytes_per_request": args.tunnel_bytes,
         "download_url": args.download_url or f"https://speed.cloudflare.com/__down?bytes={args.tunnel_bytes}",
+        "raw_upload_proxy_url": args.raw_upload_proxy_url or "direct",
+        "remote_agent_config": args.remote_agent_config,
+        "remote_agent_service": args.remote_agent_service,
         "raw_upload": [],
         "tunnel": [],
     }
@@ -446,13 +481,15 @@ def main() -> int:
 
         raw_results = []
         if not args.skip_raw:
-            print("raw: server2+WARP -> host upload_probe")
+            raw_route = args.raw_upload_proxy_url or "direct"
+            print(f"raw: server -> host upload_probe route={raw_route}")
             raw_results = remote_raw_upload_matrix(
                 ssh,
                 args.broker_base_url,
                 client_token,
                 args.raw_upload_bytes,
                 [int(item) for item in args.raw_concurrency.split(",") if item.strip()],
+                args.raw_upload_proxy_url,
             )
             result["raw_upload"] = raw_results
             for row in raw_results:
@@ -480,7 +517,7 @@ def main() -> int:
             download_url = args.download_url or f"https://speed.cloudflare.com/__down?bytes={args.tunnel_bytes}"
             for workers, batch in variants:
                 print(f"tunnel: workers={workers} batch={batch}")
-                set_remote_agent_variant(ssh, workers, batch, 0.006)
+                set_remote_agent_variant(ssh, args.remote_agent_config, args.remote_agent_service, workers, batch, 0.006)
                 sample = tunnel_variant(binary, tmp_dir, args.broker_base_url, client_token, workers, batch, args.tunnel_bytes, download_url)
                 result["tunnel"].append(sample)
                 s = sample["sample"]

@@ -49,6 +49,7 @@ fn live_profile() -> Option<ClientProfile> {
         name: "Live".into(),
         broker_base_url,
         client_token,
+        target_agent_peer_label: env::var("TWOMAN_E2E_TARGET_AGENT_PEER_LABEL").unwrap_or_default(),
         verify_tls: env::var("TWOMAN_E2E_VERIFY_TLS")
             .ok()
             .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))

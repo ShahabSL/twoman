@@ -17,11 +17,12 @@ type Config struct {
 	HSRouteTemplate string `json:"ws_route_template"`
 	HealthTemplate  string `json:"health_template"`
 
-	ListenHost      string `json:"listen_host"`
-	HTTPListenPort  int    `json:"http_listen_port"`
-	SOCKSListenPort int    `json:"socks_listen_port"`
-	ListenStatePath string `json:"listen_state_path"`
-	PeerID          string `json:"peer_id"`
+	ListenHost           string `json:"listen_host"`
+	HTTPListenPort       int    `json:"http_listen_port"`
+	SOCKSListenPort      int    `json:"socks_listen_port"`
+	ListenStatePath      string `json:"listen_state_path"`
+	PeerID               string `json:"peer_id"`
+	TargetAgentPeerLabel string `json:"target_agent_peer_label"`
 
 	HTTPTimeoutSeconds          float64 `json:"http_timeout_seconds"`
 	HeartbeatIntervalSeconds    float64 `json:"heartbeat_interval_seconds"`

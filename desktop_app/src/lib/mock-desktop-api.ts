@@ -14,6 +14,7 @@ function makeProfile(partial: Partial<ClientProfile> & Pick<ClientProfile, "id" 
     name: partial.name,
     brokerBaseUrl: partial.brokerBaseUrl ?? "https://broker.example.net/connect",
     clientToken: partial.clientToken ?? "demo-token",
+    targetAgentPeerLabel: partial.targetAgentPeerLabel ?? "",
     verifyTls: partial.verifyTls ?? false,
     http2Ctl: partial.http2Ctl ?? true,
     http2Data: partial.http2Data ?? false,

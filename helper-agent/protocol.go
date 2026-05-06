@@ -133,13 +133,23 @@ func (d *FrameDecoder) feed(data []byte) ([]*Frame, error) {
 
 // --- Payload helpers (mirror twoman_protocol.py) ---
 
-func makeOpenPayload(host string, port uint16) []byte {
+func makeOpenPayload(host string, port uint16, targetAgentPeerLabel string) []byte {
 	h := []byte(host)
-	buf := make([]byte, 5+len(h))
+	target := []byte(targetAgentPeerLabel)
+	extraLen := 0
+	if len(target) > 0 {
+		extraLen = 2 + len(target)
+	}
+	buf := make([]byte, 5+len(h)+extraLen)
 	buf[0] = ModeTCP
 	binary.BigEndian.PutUint16(buf[1:3], port)
 	binary.BigEndian.PutUint16(buf[3:5], uint16(len(h)))
 	copy(buf[5:], h)
+	if len(target) > 0 {
+		offset := 5 + len(h)
+		binary.BigEndian.PutUint16(buf[offset:offset+2], uint16(len(target)))
+		copy(buf[offset+2:], target)
+	}
 	return buf
 }
 
@@ -147,16 +157,33 @@ func makeErrorPayload(msg string) []byte { return []byte(msg) }
 func parseErrorPayload(p []byte) string  { return string(p) }
 
 func parseOpenPayload(payload []byte) (host string, port uint16, err error) {
+	host, port, _, err = parseOpenPayloadWithTarget(payload)
+	return host, port, err
+}
+
+func parseOpenPayloadWithTarget(payload []byte) (host string, port uint16, targetAgentPeerLabel string, err error) {
 	if len(payload) < 5 {
-		return "", 0, fmt.Errorf("open payload too short")
+		return "", 0, "", fmt.Errorf("open payload too short")
 	}
 	// layout: mode(1) port(2) hostLen(2) host(N)
 	port = binary.BigEndian.Uint16(payload[1:3])
 	hLen := int(binary.BigEndian.Uint16(payload[3:5]))
 	if len(payload) < 5+hLen {
-		return "", 0, fmt.Errorf("open payload host truncated")
+		return "", 0, "", fmt.Errorf("open payload host truncated")
 	}
-	return string(payload[5 : 5+hLen]), port, nil
+	host = string(payload[5 : 5+hLen])
+	extra := payload[5+hLen:]
+	if len(extra) == 0 {
+		return host, port, "", nil
+	}
+	if len(extra) < 2 {
+		return "", 0, "", fmt.Errorf("open payload target truncated")
+	}
+	targetLen := int(binary.BigEndian.Uint16(extra[:2]))
+	if len(extra) < 2+targetLen {
+		return "", 0, "", fmt.Errorf("open payload target truncated")
+	}
+	return host, port, string(extra[2 : 2+targetLen]), nil
 }
 
 func makeDNSQueryFramePayload(targetHost string, dnsPayload []byte) ([]byte, error) {

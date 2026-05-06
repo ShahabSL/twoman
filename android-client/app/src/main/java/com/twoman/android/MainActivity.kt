@@ -512,6 +512,7 @@ class MainActivity : AppCompatActivity() {
         dialogBinding.nameInput.setText(profile.name)
         dialogBinding.brokerInput.setText(profile.brokerBaseUrl)
         dialogBinding.tokenInput.setText(profile.clientToken)
+        dialogBinding.targetAgentInput.setText(profile.targetAgentPeerLabel)
         dialogBinding.httpPortInput.setText(if (profile.httpPort == 0) "" else profile.httpPort.toString())
         dialogBinding.socksPortInput.setText(if (profile.socksPort == 0) "" else profile.socksPort.toString())
         dialogBinding.verifyTlsSwitch.isChecked = profile.verifyTls
@@ -541,6 +542,7 @@ class MainActivity : AppCompatActivity() {
         dialogBinding.nameInput.setText(imported.name)
         dialogBinding.brokerInput.setText(imported.brokerBaseUrl)
         dialogBinding.tokenInput.setText(imported.clientToken)
+        dialogBinding.targetAgentInput.setText(imported.targetAgentPeerLabel)
         dialogBinding.httpPortInput.setText(if (imported.httpPort == 0) "" else imported.httpPort.toString())
         dialogBinding.socksPortInput.setText(if (imported.socksPort == 0) "" else imported.socksPort.toString())
         dialogBinding.verifyTlsSwitch.isChecked = imported.verifyTls
@@ -559,6 +561,7 @@ class MainActivity : AppCompatActivity() {
         val name = dialogBinding.nameInput.text.toString().trim()
         val broker = dialogBinding.brokerInput.text.toString().trim()
         val token = dialogBinding.tokenInput.text.toString().trim()
+        val targetAgent = dialogBinding.targetAgentInput.text.toString().trim()
         val httpPort = dialogBinding.httpPortInput.text.toString().toIntOrNull() ?: 0
         val socksPort = dialogBinding.socksPortInput.text.toString().toIntOrNull() ?: 0
         if (name.isBlank() || broker.isBlank() || token.isBlank()) {
@@ -571,6 +574,7 @@ class MainActivity : AppCompatActivity() {
             name = name,
             brokerBaseUrl = broker,
             clientToken = token,
+            targetAgentPeerLabel = targetAgent,
             verifyTls = dialogBinding.verifyTlsSwitch.isChecked,
             http2Ctl = dialogBinding.http2CtlSwitch.isChecked,
             http2Data = dialogBinding.http2DataSwitch.isChecked,

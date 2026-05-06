@@ -642,6 +642,7 @@ impl DesktopRuntime {
                 "transport_profile": "auto",
                 "broker_base_url": profile.broker_base_url,
                 "client_token": profile.client_token,
+                "target_agent_peer_label": profile.target_agent_peer_label,
                 "listen_host": "127.0.0.1",
                 "http_listen_port": profile.http_port,
                 "socks_listen_port": profile.socks_port,

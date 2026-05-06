@@ -334,6 +334,25 @@ function makeErrorPayload(message) {
   return Buffer.from(String(message || ""), "utf8");
 }
 
+function openPayloadTargetAgentPeerLabel(payload) {
+  if (!Buffer.isBuffer(payload) || payload.length < 5) {
+    return "";
+  }
+  const hostLen = payload.readUInt16BE(3);
+  const targetOffset = 5 + hostLen;
+  if (payload.length <= targetOffset) {
+    return "";
+  }
+  if (payload.length < targetOffset + 2) {
+    throw new Error("open payload target truncated");
+  }
+  const targetLen = payload.readUInt16BE(targetOffset);
+  if (payload.length < targetOffset + 2 + targetLen) {
+    throw new Error("open payload target truncated");
+  }
+  return normalizePeerLabel(payload.subarray(targetOffset + 2, targetOffset + 2 + targetLen).toString("utf8"));
+}
+
 function paddedPayload(payload, minimumSize) {
   let body = payload || Buffer.alloc(0);
   while (body.length < minimumSize) {
@@ -443,6 +462,7 @@ class PeerState {
     this.role = role;
     this.peerLabel = peerLabel;
     this.peerSessionId = peerSessionId;
+    this.targetAgentPeerLabel = "";
     this.lastSeenMs = nowMs();
     this.channels = { ctl: null, data: null };
     this.flushScheduled = { ctl: false, data: false };
@@ -698,7 +718,7 @@ class BrokerState {
     return rawPath || "/";
   }
 
-  ensurePeer(role, peerLabel, peerSessionId) {
+  ensurePeer(role, peerLabel, peerSessionId, targetAgentPeerLabel = "") {
     const key = this.peerKey(role, peerSessionId);
     let peer = this.peers.get(key);
     if (!peer) {
@@ -723,6 +743,9 @@ class BrokerState {
     }
     peer.touch();
     peer.peerLabel = peerLabel;
+    if (role === "helper") {
+      peer.targetAgentPeerLabel = normalizePeerLabel(targetAgentPeerLabel);
+    }
     if (role === "agent") {
       this.selectAgentPeer();
     }
@@ -822,6 +845,24 @@ class BrokerState {
     return peer ? peer.peerSessionId : "";
   }
 
+  selectAgentSessionIdForTarget(targetAgentPeerLabel) {
+    const normalizedTarget = normalizePeerLabel(targetAgentPeerLabel);
+    if (!normalizedTarget) {
+      return this.selectAgentSessionId();
+    }
+    const cutoffMs = nowMs() - this.peerTtlMs;
+    let newestPeer = null;
+    for (const peer of this.peers.values()) {
+      if (peer.role !== "agent" || peer.peerLabel !== normalizedTarget || peer.lastSeenMs < cutoffMs) {
+        continue;
+      }
+      if (!newestPeer || peer.lastSeenMs > newestPeer.lastSeenMs) {
+        newestPeer = peer;
+      }
+    }
+    return newestPeer ? newestPeer.peerSessionId : "";
+  }
+
   allocateAgentDnsRequestId() {
     let requestId = Number(this.nextAgentDnsRequestId) >>> 0;
     if (requestId <= 0) {
@@ -838,8 +879,8 @@ class BrokerState {
     return requestId;
   }
 
-  bindChannel(role, peerLabel, peerSessionId, lane, ws) {
-    const peer = this.ensurePeer(role, peerLabel, peerSessionId);
+  bindChannel(role, peerLabel, peerSessionId, lane, ws, targetAgentPeerLabel = "") {
+    const peer = this.ensurePeer(role, peerLabel, peerSessionId, targetAgentPeerLabel);
     peer.channels[lane] = ws;
     ws._twomanPeerKey = this.peerKey(role, peerSessionId);
     ws._twomanLane = lane;
@@ -1260,9 +1301,10 @@ class BrokerState {
 
   handleDnsQuery(helperSessionId, lane, frame) {
     let openError = "";
-    let agentSessionId = this.selectAgentSessionId();
     const helperPeer = this.peers.get(this.peerKey("helper", helperSessionId));
     const helperPeerLabel = helperPeer ? helperPeer.peerLabel : helperSessionId;
+    const targetAgentPeerLabel = helperPeer ? helperPeer.targetAgentPeerLabel : "";
+    let agentSessionId = this.selectAgentSessionIdForTarget(targetAgentPeerLabel);
     if (!helperPeer) {
       openError = "helper session unavailable";
     }
@@ -1300,12 +1342,15 @@ class BrokerState {
       return;
     }
     if (!agentSessionId) {
+      const unavailableReason = targetAgentPeerLabel
+        ? `target agent unavailable: ${targetAgentPeerLabel}`
+        : "hidden agent unavailable";
       this.queueFrame("helper", helperSessionId, {
         typeId: FRAME_DNS_FAIL,
         flags: 0,
         streamId: frame.streamId,
         offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
+        payload: makeErrorPayload(unavailableReason)
       }, "pri");
       return;
     }
@@ -1372,12 +1417,18 @@ class BrokerState {
 
   handleOpen(helperSessionId, frame) {
     let openError = "";
-    let agentSessionId = this.selectAgentSessionId();
     const helperPeer = this.peers.get(this.peerKey("helper", helperSessionId));
     const helperPeerLabel = helperPeer ? helperPeer.peerLabel : helperSessionId;
+    let targetAgentPeerLabel = helperPeer ? helperPeer.targetAgentPeerLabel : "";
+    try {
+      targetAgentPeerLabel = openPayloadTargetAgentPeerLabel(frame.payload) || targetAgentPeerLabel;
+    } catch (error) {
+      openError = String(error && error.message ? error.message : error);
+    }
+    let agentSessionId = this.selectAgentSessionIdForTarget(targetAgentPeerLabel);
     if (!helperPeer) {
       openError = "helper session unavailable";
-    } else {
+    } else if (!openError) {
       openError = this.reserveHelperOpen(helperPeer);
     }
     if (agentSessionId && !this.peers.has(this.peerKey("agent", agentSessionId))) {
@@ -1399,17 +1450,21 @@ class BrokerState {
       return;
     }
     if (!agentSessionId) {
+      const unavailableReason = targetAgentPeerLabel
+        ? `target agent unavailable: ${targetAgentPeerLabel}`
+        : "hidden agent unavailable";
       this.recordEvent("open_fail", {
         helper_session_id: helperSessionId,
         helper_stream_id: frame.streamId,
-        reason: "no-agent"
+        reason: targetAgentPeerLabel ? "target-agent-unavailable" : "no-agent",
+        target_agent_peer_label: targetAgentPeerLabel
       });
       this.queueFrame("helper", helperSessionId, {
         typeId: FRAME_OPEN_FAIL,
         flags: 0,
         streamId: frame.streamId,
         offset: 0,
-        payload: makeErrorPayload("hidden agent unavailable")
+        payload: makeErrorPayload(unavailableReason)
       }, this.helperControlLane());
       return;
     }
@@ -1428,7 +1483,8 @@ class BrokerState {
       helper_stream_id: frame.streamId,
       agent_session_id: agentSessionId,
       agent_stream_id: agentStreamId,
-      helper_peer_label: helperPeerLabel
+      helper_peer_label: helperPeerLabel,
+      target_agent_peer_label: targetAgentPeerLabel
     });
     const queued = this.queueFrame(
       "agent",
@@ -1650,6 +1706,7 @@ class BrokerState {
           role: peer.role,
           peer_label: peer.peerLabel,
           peer_session_id: peer.peerSessionId,
+          target_agent_peer_label: peer.targetAgentPeerLabel,
           active_streams: peer.activeStreams,
           ctl_buffered_bytes: peer.ctlQueue.bufferedBytes,
           pri_buffered_bytes: peer.dataPriQueue.bufferedBytes,
@@ -1779,6 +1836,10 @@ function parseCookieHeader(value) {
   return cookies;
 }
 
+function normalizePeerLabel(value) {
+  return String(value || "").trim().slice(0, 128);
+}
+
 function normalizeMediaType(value) {
   return String(value || "").split(";", 1)[0].trim().toLowerCase();
 }
@@ -1826,11 +1887,12 @@ function connectionHeaders(req) {
   }
   return {
     token,
-    cipherSuite: cipherSuite ? (SUPPORTED_CIPHER_SUITES.has(cipherSuite) ? cipherSuite : "") : CIPHER_SUITE_HMAC_SHA256_CTR,
-    role: String(cookies._cf_role || cookies.twoman_role || req.headers["x-cf-role"] || req.headers["x-twoman-role"] || ""),
-    peer: String(cookies._cf_lspa || cookies.twoman_peer || req.headers["x-cf-lspa"] || req.headers["x-twoman-peer"] || ""),
-    session: String(cookies._wp_syncId || cookies.twoman_session || req.headers["x-wp-syncid"] || req.headers["x-twoman-session"] || "")
-  };
+	    cipherSuite: cipherSuite ? (SUPPORTED_CIPHER_SUITES.has(cipherSuite) ? cipherSuite : "") : CIPHER_SUITE_HMAC_SHA256_CTR,
+	    role: String(cookies._cf_role || cookies.twoman_role || req.headers["x-cf-role"] || req.headers["x-twoman-role"] || ""),
+	    peer: String(cookies._cf_lspa || cookies.twoman_peer || req.headers["x-cf-lspa"] || req.headers["x-twoman-peer"] || ""),
+	    session: String(cookies._wp_syncId || cookies.twoman_session || req.headers["x-wp-syncid"] || req.headers["x-twoman-session"] || ""),
+	    targetAgentPeerLabel: normalizePeerLabel(cookies.twoman_target_agent || req.headers["x-twoman-target-agent"] || "")
+	  };
 }
 
 function tokenForAuthenticatedHeaders(headers) {
@@ -2050,7 +2112,7 @@ const server = http.createServer(async (req, res) => {
       jsonResponse(res, 400, { error: "unsupported cipher suite" });
       return;
     }
-    const peer = state.ensurePeer(headers.role, headers.peer, headers.session);
+	    const peer = state.ensurePeer(headers.role, headers.peer, headers.session, headers.targetAgentPeerLabel);
     if (req.method === "POST" && direction === "up") {
       try {
         validateBinaryMediaType(req.headers["content-type"]);
@@ -2186,7 +2248,7 @@ echoWss.on("connection", (ws) => {
 wss.on("connection", (ws) => {
   const headers = ws._twomanHeaders;
   const lane = ws._twomanLane;
-  const peer = state.bindChannel(headers.role, headers.peer, headers.session, lane, ws);
+  const peer = state.bindChannel(headers.role, headers.peer, headers.session, lane, ws, headers.targetAgentPeerLabel);
   const decoder = new FrameDecoder(state.maxFramePayloadBytes);
   
   const tokenStr = tokenForAuthenticatedHeaders(headers);

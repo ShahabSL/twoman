@@ -76,11 +76,17 @@ def encode_frame(frame):
     ) + payload
 
 
-def make_open_payload(host, port, mode=MODE_TCP):
+def make_open_payload(host, port, mode=MODE_TCP, target_agent_peer_label=""):
     host_bytes = host.encode("utf-8")
     if len(host_bytes) > 65535:
         raise ValueError("host is too long")
-    return struct.pack("!BH", int(mode), int(port)) + struct.pack("!H", len(host_bytes)) + host_bytes
+    payload = struct.pack("!BH", int(mode), int(port)) + struct.pack("!H", len(host_bytes)) + host_bytes
+    if target_agent_peer_label:
+        target_bytes = str(target_agent_peer_label).encode("utf-8")
+        if len(target_bytes) > 65535:
+            raise ValueError("target agent label is too long")
+        payload += struct.pack("!H", len(target_bytes)) + target_bytes
+    return payload
 
 
 def parse_open_payload(payload):
@@ -91,10 +97,20 @@ def parse_open_payload(payload):
     if len(payload) < (5 + host_length):
         raise ValueError("open payload host is truncated")
     host = payload[5:5 + host_length].decode("utf-8")
+    target_agent_peer_label = ""
+    rest = payload[5 + host_length:]
+    if rest:
+        if len(rest) < 2:
+            raise ValueError("open payload target agent is truncated")
+        target_length = struct.unpack("!H", rest[:2])[0]
+        if len(rest) < 2 + target_length:
+            raise ValueError("open payload target agent is truncated")
+        target_agent_peer_label = rest[2:2 + target_length].decode("utf-8")
     return {
         "mode": mode,
         "port": int(port),
         "host": host,
+        "target_agent_peer_label": target_agent_peer_label,
     }
 
 

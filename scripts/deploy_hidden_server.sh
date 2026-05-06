@@ -76,6 +76,9 @@ fi
 
 SSH_OPTS=(-p "${TWOMAN_SERVER_PORT}" -o StrictHostKeyChecking=no)
 SCP_OPTS=(-P "${TWOMAN_SERVER_PORT}" -o StrictHostKeyChecking=no)
+if { scp -O 2>&1 || true; } | grep -q '^usage: scp'; then
+  SCP_OPTS=(-O "${SCP_OPTS[@]}")
+fi
 if [ -n "${TWOMAN_SERVER_SSH_KEY}" ]; then
   SSH_OPTS+=(-i "${TWOMAN_SERVER_SSH_KEY}")
   SCP_OPTS+=(-i "${TWOMAN_SERVER_SSH_KEY}")
@@ -168,7 +171,6 @@ echo "Uploading agent files..."
 "${SCP_CMD[@]}" \
   "${TMP_GO_BIN}" \
   hidden_server/agent_watchdog.py \
-  hidden_server/systemd/twoman-agent-watchdog.timer \
   "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}:${TWOMAN_SERVER_DIR}/"
 "${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "mv '${TWOMAN_SERVER_DIR}/$(basename "${TMP_GO_BIN}")' '${TWOMAN_SERVER_DIR}/twoman-helper-agent' && chmod 0755 '${TWOMAN_SERVER_DIR}/twoman-helper-agent'"
 
@@ -266,6 +268,20 @@ ExecStart=/usr/bin/python3 ${TWOMAN_SERVER_DIR}/agent_watchdog.py --service ${TW
 EOF
 )"
 
+WATCHDOG_TIMER_CONTENT="$(cat <<EOF
+[Unit]
+Description=Run Twoman agent watchdog every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=${TWOMAN_WATCHDOG_SERVICE_NAME}
+
+[Install]
+WantedBy=timers.target
+EOF
+)"
+
 RUNTIME_INSTALL_COMMANDS="$(cat <<EOF
 chmod 755 '${TWOMAN_SERVER_DIR}/twoman-helper-agent' '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
 /usr/bin/python3 -m py_compile '${TWOMAN_SERVER_DIR}/agent_watchdog.py'
@@ -285,7 +301,9 @@ EOF
 cat > '/etc/systemd/system/${TWOMAN_WATCHDOG_SERVICE_NAME}' <<'EOF'
 ${WATCHDOG_SERVICE_CONTENT}
 EOF
-install -m 0644 '${TWOMAN_SERVER_DIR}/twoman-agent-watchdog.timer' /etc/systemd/system/${TWOMAN_WATCHDOG_TIMER_NAME}
+cat > '/etc/systemd/system/${TWOMAN_WATCHDOG_TIMER_NAME}' <<'EOF'
+${WATCHDOG_TIMER_CONTENT}
+EOF
 ${RUNTIME_INSTALL_COMMANDS}
 systemctl daemon-reload
 systemctl enable --now '${TWOMAN_AGENT_SERVICE_NAME}'

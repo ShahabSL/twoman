@@ -69,6 +69,7 @@ function blankProfile(): ClientProfile {
     name: "",
     brokerBaseUrl: "",
     clientToken: "",
+    targetAgentPeerLabel: "",
     verifyTls: false,
     http2Ctl: true,
     http2Data: false,
@@ -1154,6 +1155,18 @@ function ProfileDialog(props: {
                 setDraft((current) => ({ ...current, clientToken: event.currentTarget.value }))
               }
               value={draft.clientToken}
+            />
+          </div>
+
+          <div className="grid gap-2.5">
+            <Label htmlFor="profile-target-agent">Target agent label</Label>
+            <Input
+              id="profile-target-agent"
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, targetAgentPeerLabel: event.currentTarget.value }))
+              }
+              placeholder="Leave empty for automatic failover"
+              value={draft.targetAgentPeerLabel}
             />
           </div>
 

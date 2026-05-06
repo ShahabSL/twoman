@@ -227,6 +227,9 @@ func buildConnectionHeaders(token, role, peerLabel, peerSessionID, userAgent str
 		cn["peer"]:    peerLabel,
 		cn["session"]: peerSessionID,
 	}
+	if role == "helper" && strings.TrimSpace(cfg.TargetAgentPeerLabel) != "" {
+		cookies["twoman_target_agent"] = strings.TrimSpace(cfg.TargetAgentPeerLabel)
+	}
 
 	headers := map[string]string{
 		"Accept":          fmt.Sprintf("application/json, %s, */*;q=0.8", binaryType),
