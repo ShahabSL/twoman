@@ -73,6 +73,10 @@ Multi-instance note:
 - installer state now lives under `instances/<name>/`
 - new named installs default to `/opt/twoman-<name>` and `twoman-<name>.service`
 - when Node is available, the installer recommends it first
+- multiple hidden servers can point at the same public host broker
+- each hidden server should use a distinct agent peer label, such as `agent-main`, `agent-nima`, or `agent-toork`
+- client profiles can leave `targetAgentPeerLabel` empty for broker-selected routing or set it to one label to force a specific exit
+- adding another exit does not require another public host; it only requires another hidden agent with the same broker URL and agent token
 
 Easy-deploy guide:
 - [docs/EASY_DEPLOY.md](docs/EASY_DEPLOY.md)
