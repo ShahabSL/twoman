@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"time"
 )
 
 // Config is shared by the Go helper and hidden agent dataplane.
@@ -25,6 +26,8 @@ type Config struct {
 	ListenStatePath      string `json:"listen_state_path"`
 	PeerID               string `json:"peer_id"`
 	TargetAgentPeerLabel string `json:"target_agent_peer_label"`
+	LogPath              string `json:"log_path"`
+	EventLogPath         string `json:"event_log_path"`
 
 	HTTPTimeoutSeconds          float64 `json:"http_timeout_seconds"`
 	TLSHandshakeTimeoutSeconds  float64 `json:"tls_handshake_timeout_seconds"`
@@ -42,6 +45,16 @@ type Config struct {
 	VPNPreferIPv4     bool `json:"vpn_prefer_ipv4"`
 	VPNFilterAAAA     bool `json:"vpn_filter_aaaa"`
 	EnforceConnectSNI bool `json:"enforce_connect_sni"`
+
+	DNSQueryTimeoutSeconds float64 `json:"dns_query_timeout_seconds"`
+	DNSCacheTTLSeconds     float64 `json:"dns_cache_ttl_seconds"`
+	DNSMaxInflight         int     `json:"dns_max_inflight"`
+
+	// Backward-compatible Android VPN keys. These override the generic DNS
+	// keys because VPN profiles need longer waits over managed-host relays.
+	VPNDNSQueryTimeoutSeconds float64 `json:"vpn_dns_query_timeout_seconds"`
+	VPNDNSCacheTTLSeconds     float64 `json:"vpn_dns_cache_ttl_seconds"`
+	VPNDNSMaxInflight         int     `json:"vpn_dns_max_inflight"`
 
 	// {"ctl": false, "data": false} or just a bool
 	HTTP2Enabled interface{} `json:"http2_enabled"`
@@ -158,6 +171,15 @@ func (c *Config) SetDefaults() {
 	if c.SendQueueTimeoutSeconds == 0 {
 		c.SendQueueTimeoutSeconds = 5
 	}
+	if c.DNSQueryTimeoutSeconds == 0 {
+		c.DNSQueryTimeoutSeconds = 10
+	}
+	if c.DNSCacheTTLSeconds == 0 {
+		c.DNSCacheTTLSeconds = 60
+	}
+	if c.DNSMaxInflight == 0 {
+		c.DNSMaxInflight = 8
+	}
 	if c.BinaryMediaType == "" {
 		c.BinaryMediaType = "image/webp"
 	}
@@ -198,6 +220,39 @@ func (c *Config) SetDefaults() {
 	default:
 		// nil or unknown: both false (HTTP/1.1)
 	}
+}
+
+func (c *Config) dnsQueryTimeout() time.Duration {
+	seconds := c.DNSQueryTimeoutSeconds
+	if c.VPNDNSQueryTimeoutSeconds > 0 {
+		seconds = c.VPNDNSQueryTimeoutSeconds
+	}
+	return secondsToDuration(seconds, 10*time.Second)
+}
+
+func (c *Config) dnsCacheTTL() time.Duration {
+	seconds := c.DNSCacheTTLSeconds
+	if c.VPNDNSCacheTTLSeconds > 0 {
+		seconds = c.VPNDNSCacheTTLSeconds
+	}
+	return secondsToDuration(seconds, 60*time.Second)
+}
+
+func (c *Config) dnsMaxInflight() int {
+	if c.VPNDNSMaxInflight > 0 {
+		return c.VPNDNSMaxInflight
+	}
+	if c.DNSMaxInflight > 0 {
+		return c.DNSMaxInflight
+	}
+	return 8
+}
+
+func secondsToDuration(seconds float64, fallback time.Duration) time.Duration {
+	if seconds <= 0 {
+		return fallback
+	}
+	return time.Duration(seconds * float64(time.Second))
 }
 
 func loadConfig(path string) (*Config, error) {

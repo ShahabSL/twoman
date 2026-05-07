@@ -110,8 +110,8 @@ android {
         applicationId = "com.twoman.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.0.4"
+        versionCode = 18
+        versionName = "1.0.5"
         buildConfigField("String", "RUNTIME_LOG_TAG", quoteForGradle(androidLogTag))
         buildConfigField("String", "VPN_SESSION_NAME", quoteForGradle(androidVpnSessionName))
         resValue("string", "runtime_app_name", quoteForGradle(androidAppLabel))
@@ -205,4 +205,6 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20251224")
 }

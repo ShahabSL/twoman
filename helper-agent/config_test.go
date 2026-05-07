@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestConfigDefaultsSecurityBooleans(t *testing.T) {
@@ -22,6 +23,15 @@ func TestConfigDefaultsSecurityBooleans(t *testing.T) {
 	}
 	if cfg.TLSHandshakeTimeoutSeconds != 15 {
 		t.Fatalf("unexpected TLS handshake timeout: %v", cfg.TLSHandshakeTimeoutSeconds)
+	}
+	if cfg.dnsQueryTimeout() != 10*time.Second {
+		t.Fatalf("unexpected DNS timeout: %v", cfg.dnsQueryTimeout())
+	}
+	if cfg.dnsCacheTTL() != 60*time.Second {
+		t.Fatalf("unexpected DNS cache TTL: %v", cfg.dnsCacheTTL())
+	}
+	if cfg.dnsMaxInflight() != 8 {
+		t.Fatalf("unexpected DNS max in-flight: %d", cfg.dnsMaxInflight())
 	}
 }
 
@@ -64,5 +74,49 @@ func TestConfigDefaultsMissingListenPorts(t *testing.T) {
 	}
 	if cfg.SOCKSListenPort != 1080 {
 		t.Fatalf("missing SOCKS port should default to 1080, got %d", cfg.SOCKSListenPort)
+	}
+}
+
+func TestConfigUsesVPNDNSOverrides(t *testing.T) {
+	var cfg Config
+	if err := json.Unmarshal([]byte(`{
+		"dns_query_timeout_seconds": 4,
+		"dns_cache_ttl_seconds": 60,
+		"dns_max_inflight": 8,
+		"vpn_dns_query_timeout_seconds": 15,
+		"vpn_dns_cache_ttl_seconds": 30,
+		"vpn_dns_max_inflight": 32
+	}`), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetDefaults()
+	if cfg.dnsQueryTimeout() != 15*time.Second {
+		t.Fatalf("VPN DNS timeout override not applied: %v", cfg.dnsQueryTimeout())
+	}
+	if cfg.dnsCacheTTL() != 30*time.Second {
+		t.Fatalf("VPN DNS cache TTL override not applied: %v", cfg.dnsCacheTTL())
+	}
+	if cfg.dnsMaxInflight() != 32 {
+		t.Fatalf("VPN DNS max in-flight override not applied: %d", cfg.dnsMaxInflight())
+	}
+}
+
+func TestRuntimeUsesConfiguredDNSInflightLimit(t *testing.T) {
+	cfg := &Config{VPNDNSMaxInflight: 32}
+	cfg.SetDefaults()
+	rt, err := newHelperRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap(rt.dnsSem) != 32 {
+		t.Fatalf("helper runtime DNS semaphore cap = %d, want 32", cap(rt.dnsSem))
+	}
+
+	agent, err := newAgentRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap(agent.dnsSem) != 32 {
+		t.Fatalf("agent runtime DNS semaphore cap = %d, want 32", cap(agent.dnsSem))
 	}
 }

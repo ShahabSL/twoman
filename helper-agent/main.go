@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 )
 
@@ -25,6 +27,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	if err := setupLogging(cfg.LogPath); err != nil {
+		log.Fatalf("logging: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -38,6 +43,21 @@ func main() {
 	default:
 		runHelper(ctx, cfg, sigCh)
 	}
+}
+
+func setupLogging(logPath string) error {
+	if logPath == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, file))
+	return nil
 }
 
 func runHelper(ctx context.Context, cfg *Config, sigCh <-chan os.Signal) {

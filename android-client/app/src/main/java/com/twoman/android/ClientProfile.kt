@@ -17,6 +17,7 @@ data class ClientProfile(
     val httpPort: Int = 0,
     val socksPort: Int = 0,
     val httpTimeoutSeconds: Int = 30,
+    val tlsHandshakeTimeoutSeconds: Int = 45,
     val flushDelaySeconds: Double = 0.01,
     val maxBatchBytes: Int = 0,
     val dataUploadMaxBatchBytes: Int = 0,
@@ -27,6 +28,14 @@ data class ClientProfile(
     val idleRepollDataSeconds: Double = 0.1,
     val traceEnabled: Boolean = false,
 ) {
+    fun vpnResolverDnsServers(): List<String> {
+        val legacyProxy = vpnDnsProxyIp.trim()
+        val configured = vpnDnsServers
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != legacyProxy }
+        return configured.ifEmpty { DEFAULT_VPN_DNS_SERVERS }
+    }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("name", name)
@@ -40,6 +49,7 @@ data class ClientProfile(
         put("httpPort", httpPort)
         put("socksPort", socksPort)
         put("httpTimeoutSeconds", httpTimeoutSeconds)
+        put("tlsHandshakeTimeoutSeconds", tlsHandshakeTimeoutSeconds)
         put("flushDelaySeconds", flushDelaySeconds)
         put("maxBatchBytes", maxBatchBytes)
         put("dataUploadMaxBatchBytes", dataUploadMaxBatchBytes)
@@ -70,6 +80,7 @@ data class ClientProfile(
         put("listen_state_path", listenStatePath)
         put("log_path", logPath)
         put("http_timeout_seconds", httpTimeoutSeconds)
+        put("tls_handshake_timeout_seconds", tlsHandshakeTimeoutSeconds)
         put("flush_delay_seconds", flushDelaySeconds)
         if (maxBatchBytes > 0) {
             put("max_batch_bytes", maxBatchBytes)
@@ -97,6 +108,28 @@ data class ClientProfile(
                 },
             )
         }
+        put(
+            "up_workers",
+            JSONObject().apply {
+                put("data", 16)
+            },
+        )
+        put(
+            "adaptive_upload",
+            JSONObject().apply {
+                put("enabled", true)
+                put("lanes", org.json.JSONArray(listOf("data")))
+                put("min_workers", 2)
+                put("initial_workers", 6)
+                put("max_workers", 16)
+                put("min_batch_bytes", 65536)
+                put("max_batch_bytes", 524288)
+                put("increase_after_successes", 2)
+                put("decrease_after_errors", 1)
+                put("backlog_threshold_frames", 32)
+                put("decision_interval_seconds", 0.25)
+            },
+        )
         put(
             "idle_repoll_delay_seconds",
             JSONObject().apply {
@@ -126,6 +159,7 @@ data class ClientProfile(
             put("httpPort", httpPort)
             put("socksPort", socksPort)
             put("httpTimeoutSeconds", httpTimeoutSeconds)
+            put("tlsHandshakeTimeoutSeconds", tlsHandshakeTimeoutSeconds)
             if (maxBatchBytes > 0) put("maxBatchBytes", maxBatchBytes)
             if (dataUploadMaxBatchBytes > 0) put("dataUploadMaxBatchBytes", dataUploadMaxBatchBytes)
             if (dataUploadFlushDelaySeconds > 0.0) {
@@ -146,7 +180,8 @@ data class ClientProfile(
 
     companion object {
         private const val SHARE_PREFIX = "twoman://profile?data="
-        private const val DEFAULT_VPN_DNS_PROXY_IP = "198.18.0.2"
+        private const val DEFAULT_VPN_DNS_PROXY_IP = ""
+        private val DEFAULT_VPN_DNS_SERVERS = listOf("1.1.1.1", "8.8.8.8")
 
         fun fromJson(json: JSONObject): ClientProfile = ClientProfile(
             id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
@@ -163,6 +198,7 @@ data class ClientProfile(
             httpPort = json.optInt("httpPort", 0),
             socksPort = json.optInt("socksPort", 0),
             httpTimeoutSeconds = json.optInt("httpTimeoutSeconds", 30),
+            tlsHandshakeTimeoutSeconds = json.optInt("tlsHandshakeTimeoutSeconds", 45),
             flushDelaySeconds = json.optDouble("flushDelaySeconds", 0.01),
             maxBatchBytes = legacyAutoBatch(json.optInt("maxBatchBytes", 0)),
             dataUploadMaxBatchBytes = legacyAutoBatch(json.optInt("dataUploadMaxBatchBytes", 0)),
@@ -174,8 +210,8 @@ data class ClientProfile(
                         val value = array.optString(index).trim()
                         if (value.isNotEmpty()) add(value)
                     }
-                }.ifEmpty { listOf("1.1.1.1", "8.8.8.8") }
-            } ?: listOf("1.1.1.1", "8.8.8.8"),
+                }.ifEmpty { DEFAULT_VPN_DNS_SERVERS }
+            } ?: DEFAULT_VPN_DNS_SERVERS,
             idleRepollCtlSeconds = json.optDouble("idleRepollCtlSeconds", 0.05),
             idleRepollDataSeconds = json.optDouble("idleRepollDataSeconds", 0.1),
             traceEnabled = json.optBoolean("traceEnabled", false),

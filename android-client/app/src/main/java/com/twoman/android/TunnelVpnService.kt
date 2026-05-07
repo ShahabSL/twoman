@@ -106,7 +106,6 @@ class TunnelVpnService : VpnService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val dnsProxyIp = profile.vpnDnsProxyIp.ifBlank { "198.18.0.2" }
         val builder = Builder()
             .setSession(BuildConfig.VPN_SESSION_NAME)
             .setMtu(1500)
@@ -114,7 +113,16 @@ class TunnelVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .setConfigureIntent(configureIntent)
 
-        runCatching { builder.addDnsServer(dnsProxyIp) }
+        var dnsAdded = false
+        profile.vpnResolverDnsServers().forEach { dnsServer ->
+            runCatching {
+                builder.addDnsServer(dnsServer)
+                dnsAdded = true
+            }.onFailure { error ->
+                Log.w(loggerTag, "ignoring invalid VPN DNS server=$dnsServer", error)
+            }
+        }
+        check(dnsAdded) { "no valid VPN DNS servers configured" }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             // Keep local-network access outside the VPN so same-Wi-Fi clients and wireless

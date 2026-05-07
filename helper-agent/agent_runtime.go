@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-const (
-	agentDNSTimeout     = 2500 * time.Millisecond
-	agentDNSMaxInFlight = 8
-)
-
 // agentRuntime implements the agent side of the relay. It:
 //   - connects to the broker via laneTransport (role="agent")
 //   - accepts FRAME_OPEN from the helper and dials the requested origin
@@ -44,7 +39,7 @@ func newAgentRuntime(cfg *Config) (*agentRuntime, error) {
 	rt := &agentRuntime{
 		cfg:     cfg,
 		streams: make(map[uint32]*AgentStream),
-		dnsSem:  make(chan struct{}, agentDNSMaxInFlight),
+		dnsSem:  make(chan struct{}, cfg.dnsMaxInflight()),
 		originDialer: &net.Dialer{
 			Timeout:   12 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -157,7 +152,7 @@ func (rt *agentRuntime) handleDNSQuery(f *Frame) {
 	// Enforce concurrency cap.
 	select {
 	case rt.dnsSem <- struct{}{}:
-	case <-time.After(agentDNSTimeout):
+	case <-time.After(rt.cfg.dnsQueryTimeout()):
 		_ = rt.transport.sendFrame(LanePRI, &Frame{
 			TypeID:   FrameDNSFail,
 			StreamID: f.StreamID,
@@ -168,7 +163,7 @@ func (rt *agentRuntime) handleDNSQuery(f *Frame) {
 	defer func() { <-rt.dnsSem }()
 
 	upstreams := rt.dnsUpstreams(targetHost)
-	response, err := queryDNSUpstreams(upstreams, dnsPayload, agentDNSTimeout)
+	response, err := queryDNSUpstreams(upstreams, dnsPayload, rt.cfg.dnsQueryTimeout())
 	if err != nil {
 		log.Printf("[agent] dns fail host=%s err=%v", targetHost, err)
 		_ = rt.transport.sendFrame(LanePRI, &Frame{

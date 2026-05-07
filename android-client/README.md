@@ -38,8 +38,11 @@ Current design notes:
 
 - public-leg transport stays on the working HTTP profile
 - VPN mode uses a local SOCKS5 bridge through `tun2socks`
+- VPN DNS uses real resolver IPs from the profile, not the legacy `198.18.0.2` virtual address, unless a local DNS proxy is implemented
 - DNS UDP requests are translated to TCP DNS upstream so the tunnel stays compatible with the existing TCP-only Twoman backend
 - on Android 13+ the app excludes local/private-network routes from the VPN so nearby devices and local network access can stay reachable
+- Twoman excludes its own app package from the VPN route so broker/control traffic does not loop through the tunnel it is creating
+- mobile runtime config enables adaptive upload by default, starting conservatively and ramping only when there is backlog
 
 ## Saved Profiles
 
@@ -54,6 +57,8 @@ Profiles store:
 - TLS verification
 - HTTP/2 control toggle
 - HTTP/2 data toggle
+- DNS resolver IPs used by VPN mode
+- helper transport tuning such as TLS handshake timeout and adaptive upload defaults
 
 Profiles are persisted in app-private storage and can be reused from the main screen.
 

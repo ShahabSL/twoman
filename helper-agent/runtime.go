@@ -54,7 +54,7 @@ func newHelperRuntime(cfg *Config) (*helperRuntime, error) {
 		streams:  make(map[uint32]*ProxyStream),
 		dnsReqs:  make(map[uint32]chan dnsResult),
 		dnsCache: make(map[string]dnsCacheEntry),
-		dnsSem:   make(chan struct{}, 8), // max 8 concurrent DNS queries
+		dnsSem:   make(chan struct{}, cfg.dnsMaxInflight()),
 	}
 	// Seed nextDNSID with a random even number (matching Python: dns_seed & 0x7FFFFFFE)
 	var seed [4]byte
@@ -126,8 +126,6 @@ func (rt *helperRuntime) onFrame(f *Frame, lane string) {
 // ---- DNS relay -------------------------------------------------------------
 
 const (
-	dnsQueryTimeout = 2500 * time.Millisecond
-	dnsCacheTTL     = 60 * time.Second
 	dnsCacheMaxSize = 256
 	dnsTypeAAAA     = 28
 	dnsTypeHTTPS    = 65
@@ -158,7 +156,7 @@ func (rt *helperRuntime) resolveDNS(targetHost string, payload []byte) ([]byte, 
 	// Enforce parallelism limit.
 	select {
 	case rt.dnsSem <- struct{}{}:
-	case <-time.After(dnsQueryTimeout):
+	case <-time.After(rt.cfg.dnsQueryTimeout()):
 		return nil, errDNSTimeout
 	}
 	defer func() { <-rt.dnsSem }()
@@ -172,7 +170,7 @@ func (rt *helperRuntime) resolveDNS(targetHost string, payload []byte) ([]byte, 
 	rt.expireDNSCache()
 	rt.dnsCache[cacheKey] = dnsCacheEntry{
 		response:  response,
-		expiresAt: time.Now().Add(dnsCacheTTL),
+		expiresAt: time.Now().Add(rt.cfg.dnsCacheTTL()),
 	}
 	rt.cacheMu.Unlock()
 
@@ -211,7 +209,7 @@ func (rt *helperRuntime) queryDNSTransport(targetHost string, payload []byte) ([
 	select {
 	case result := <-ch:
 		return result.payload, result.err
-	case <-time.After(dnsQueryTimeout):
+	case <-time.After(rt.cfg.dnsQueryTimeout()):
 		return nil, errDNSTimeout
 	}
 }
