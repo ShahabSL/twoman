@@ -4,8 +4,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
 import android.net.InetAddresses
 import android.net.IpPrefix
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -153,6 +155,11 @@ class TunnelVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            currentUnderlyingNetworks()?.let { networks ->
+                builder.setUnderlyingNetworks(networks)
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             builder.setBlocking(true)
         }
@@ -269,6 +276,13 @@ class TunnelVpnService : VpnService() {
 
     private fun currentListenState(profile: ClientProfile): RuntimeListenState? =
         AppFiles.readRuntimeListenState(this, profile.id)
+
+    private fun currentUnderlyingNetworks(): Array<Network>? {
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNetwork = connectivityManager?.activeNetwork ?: return null
+        return arrayOf(activeNetwork)
+    }
 
     override fun onDestroy() {
         Log.i(loggerTag, "TunnelVpnService onDestroy")
