@@ -638,9 +638,7 @@ impl DesktopRuntime {
                 port_conflicts.join(", ")
             ));
         }
-        fs::write(
-            &config_path,
-            serde_json::to_vec_pretty(&json!({
+        let mut runtime_config = json!({
                 "transport": "http",
                 "transport_profile": "auto",
                 "broker_base_url": profile.broker_base_url,
@@ -654,15 +652,8 @@ impl DesktopRuntime {
                 "pid_file": pid_path,
                 "http_timeout_seconds": profile.http_timeout_seconds,
                 "flush_delay_seconds": profile.flush_delay_seconds,
-                "max_batch_bytes": profile.max_batch_bytes,
                 "verify_tls": profile.verify_tls,
                 "streaming_up_lanes": [],
-                "upload_profiles": {
-                    "data": {
-                        "max_batch_bytes": profile.data_upload_max_batch_bytes,
-                        "flush_delay_seconds": profile.data_upload_flush_delay_seconds,
-                    }
-                },
                 "idle_repoll_delay_seconds": {
                     "ctl": profile.idle_repoll_ctl_seconds,
                     "data": profile.idle_repoll_data_seconds,
@@ -672,8 +663,32 @@ impl DesktopRuntime {
                     "data": profile.http2_data,
                 },
                 "trace_enabled": profile.trace_enabled,
-            }))
-            .map_err(|error| format!("failed to serialize helper config: {error}"))?,
+        });
+        if let Some(config) = runtime_config.as_object_mut() {
+            if profile.max_batch_bytes > 0 {
+                config.insert("max_batch_bytes".into(), json!(profile.max_batch_bytes));
+            }
+            let mut data_profile = serde_json::Map::new();
+            if profile.data_upload_max_batch_bytes > 0 {
+                data_profile.insert(
+                    "max_batch_bytes".into(),
+                    json!(profile.data_upload_max_batch_bytes),
+                );
+            }
+            if profile.data_upload_flush_delay_seconds > 0.0 {
+                data_profile.insert(
+                    "flush_delay_seconds".into(),
+                    json!(profile.data_upload_flush_delay_seconds),
+                );
+            }
+            if !data_profile.is_empty() {
+                config.insert("upload_profiles".into(), json!({ "data": data_profile }));
+            }
+        }
+        fs::write(
+            &config_path,
+            serde_json::to_vec_pretty(&runtime_config)
+                .map_err(|error| format!("failed to serialize helper config: {error}"))?,
         )
         .map_err(|error| format!("failed to write helper config: {error}"))?;
 

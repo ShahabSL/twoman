@@ -15,6 +15,15 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _legacy_auto_int(value: Any, default: int = 0) -> int:
+    parsed = int(value if value is not None else default)
+    return 0 if parsed == 65536 else parsed
+
+
+def _positive_or_none(value: int) -> int | None:
+    return value if value > 0 else None
+
+
 @dataclass(slots=True)
 class ClientProfile:
     """User-facing Twoman client profile persisted by the desktop manager."""
@@ -31,9 +40,9 @@ class ClientProfile:
     socks_port: int = 21167
     http_timeout_seconds: int = 30
     flush_delay_seconds: float = 0.01
-    max_batch_bytes: int = 65536
-    data_upload_max_batch_bytes: int = 65536
-    data_upload_flush_delay_seconds: float = 0.004
+    max_batch_bytes: int = 0
+    data_upload_max_batch_bytes: int = 0
+    data_upload_flush_delay_seconds: float = 0.0
     idle_repoll_ctl_seconds: float = 0.05
     idle_repoll_data_seconds: float = 0.1
     trace_enabled: bool = False
@@ -72,17 +81,17 @@ class ClientProfile:
             flush_delay_seconds=float(
                 payload.get("flush_delay_seconds", payload.get("flushDelaySeconds", 0.01))
             ),
-            max_batch_bytes=int(payload.get("max_batch_bytes", payload.get("maxBatchBytes", 65536))),
-            data_upload_max_batch_bytes=int(
+            max_batch_bytes=_legacy_auto_int(payload.get("max_batch_bytes", payload.get("maxBatchBytes", 0))),
+            data_upload_max_batch_bytes=_legacy_auto_int(
                 payload.get(
                     "data_upload_max_batch_bytes",
-                    payload.get("dataUploadMaxBatchBytes", 65536),
+                    payload.get("dataUploadMaxBatchBytes", 0),
                 )
             ),
             data_upload_flush_delay_seconds=float(
                 payload.get(
                     "data_upload_flush_delay_seconds",
-                    payload.get("dataUploadFlushDelaySeconds", 0.004),
+                    payload.get("dataUploadFlushDelaySeconds", 0.0),
                 )
             ),
             idle_repoll_ctl_seconds=float(
@@ -106,7 +115,7 @@ class ClientProfile:
 
     def to_runtime_config(self, log_path: str) -> dict[str, Any]:
         self.validate()
-        return {
+        config: dict[str, Any] = {
             "transport": "http",
             "transport_profile": "auto",
             "broker_base_url": self.broker_base_url,
@@ -118,15 +127,8 @@ class ClientProfile:
             "log_path": log_path,
             "http_timeout_seconds": self.http_timeout_seconds,
             "flush_delay_seconds": self.flush_delay_seconds,
-            "max_batch_bytes": self.max_batch_bytes,
             "verify_tls": self.verify_tls,
             "streaming_up_lanes": [],
-            "upload_profiles": {
-                "data": {
-                    "max_batch_bytes": self.data_upload_max_batch_bytes,
-                    "flush_delay_seconds": self.data_upload_flush_delay_seconds,
-                }
-            },
             "idle_repoll_delay_seconds": {
                 "ctl": self.idle_repoll_ctl_seconds,
                 "data": self.idle_repoll_data_seconds,
@@ -136,6 +138,16 @@ class ClientProfile:
                 "data": self.http2_data,
             },
         }
+        if max_batch_bytes := _positive_or_none(self.max_batch_bytes):
+            config["max_batch_bytes"] = max_batch_bytes
+        data_profile: dict[str, Any] = {}
+        if data_batch := _positive_or_none(self.data_upload_max_batch_bytes):
+            data_profile["max_batch_bytes"] = data_batch
+        if self.data_upload_flush_delay_seconds > 0:
+            data_profile["flush_delay_seconds"] = self.data_upload_flush_delay_seconds
+        if data_profile:
+            config["upload_profiles"] = {"data": data_profile}
+        return config
 
     def to_share_text(self) -> str:
         export_payload = {
@@ -149,14 +161,16 @@ class ClientProfile:
             "httpPort": self.http_port,
             "socksPort": self.socks_port,
             "httpTimeoutSeconds": self.http_timeout_seconds,
-            "flushDelaySeconds": self.flush_delay_seconds,
-            "maxBatchBytes": self.max_batch_bytes,
-            "dataUploadMaxBatchBytes": self.data_upload_max_batch_bytes,
-            "dataUploadFlushDelaySeconds": self.data_upload_flush_delay_seconds,
             "idleRepollCtlSeconds": self.idle_repoll_ctl_seconds,
             "idleRepollDataSeconds": self.idle_repoll_data_seconds,
             "traceEnabled": self.trace_enabled,
         }
+        if self.max_batch_bytes > 0:
+            export_payload["maxBatchBytes"] = self.max_batch_bytes
+        if self.data_upload_max_batch_bytes > 0:
+            export_payload["dataUploadMaxBatchBytes"] = self.data_upload_max_batch_bytes
+        if self.data_upload_flush_delay_seconds > 0:
+            export_payload["dataUploadFlushDelaySeconds"] = self.data_upload_flush_delay_seconds
         encoded = base64.urlsafe_b64encode(
             json.dumps(export_payload, separators=(",", ":")).encode("utf-8")
         ).decode("ascii").rstrip("=")

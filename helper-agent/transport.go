@@ -85,6 +85,8 @@ type laneTransport struct {
 	sendQueueTimeout     time.Duration
 	upWorkers            map[string]int
 	cipherSuite          string
+	uploadBodyMode       string
+	uploadFilename       string
 }
 
 type uploadProfile struct {
@@ -131,7 +133,13 @@ func newLaneTransport(cfg *Config, role, peerID string, onFrame onFrameFunc) *la
 		collapseDataLanes:    true,
 		upWorkers:            map[string]int{LaneCTL: 1, LaneData: 2},
 		cipherSuite:          cipherSuiteHMACSHA256CTR,
+		uploadBodyMode:       strings.ToLower(strings.TrimSpace(cfg.UploadBodyMode)),
+		uploadFilename:       randomFilename(),
 	}
+	if t.uploadBodyMode == "" {
+		t.uploadBodyMode = "multipart"
+	}
+	t.routes.setCamouflage("", "", cfg.LaneRoutes)
 
 	// ctl/pri/bulk queues kept for non-collapsed sends; dataQueue serves the
 	// collapsed data lane (mirrors Python _transport_common_args collapse_data_lanes=True).
@@ -203,6 +211,7 @@ func (t *laneTransport) applyBrokerCapabilities(ctx context.Context) error {
 		return nil
 	}
 	t.cipherSuite = selectCipherSuite(capabilities)
+	t.applyCamouflage(capabilities)
 	profileName = selectTransportProfile(t.cfg, capabilities)
 	if profileName == "" {
 		return nil
@@ -213,6 +222,26 @@ func (t *laneTransport) applyBrokerCapabilities(ctx context.Context) error {
 	log.Printf("[transport] profile=%s cipher=%s role=%s down_lanes=%v down_parallelism=%v up_workers=%v stream_control_lane=%s",
 		profileName, t.cipherSuite, t.role, sortedLaneKeys(t.downLanes), t.downParallelism, t.upWorkers, t.streamControlLane)
 	return nil
+}
+
+func (t *laneTransport) applyCamouflage(capabilities map[string]interface{}) {
+	raw, ok := capabilities["camouflage"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if mediaType, ok := raw["binary_media_type"].(string); ok && strings.TrimSpace(mediaType) != "" {
+		t.cfg.BinaryMediaType = strings.TrimSpace(mediaType)
+	}
+	if mode, ok := raw["upload_body_mode"].(string); ok && strings.TrimSpace(mode) != "" {
+		t.uploadBodyMode = strings.ToLower(strings.TrimSpace(mode))
+	}
+	routeTemplate, _ := raw["route_template"].(string)
+	healthTemplate, _ := raw["health_template"].(string)
+	laneRoutes := stringMap(raw["lane_routes"])
+	t.routes.setCamouflage(routeTemplate, healthTemplate, laneRoutes)
+	if names := stringMap(raw["identity_cookie_names"]); len(names) > 0 {
+		t.cfg.IdentityCookieNames = names
+	}
 }
 
 func selectCipherSuite(capabilities map[string]interface{}) string {
@@ -362,6 +391,21 @@ func stringSlice(value interface{}) []string {
 		text := strings.TrimSpace(fmt.Sprint(item))
 		if text != "" {
 			values = append(values, text)
+		}
+	}
+	return values
+}
+
+func stringMap(value interface{}) map[string]string {
+	raw, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	values := make(map[string]string)
+	for key, item := range raw {
+		text := strings.TrimSpace(fmt.Sprint(item))
+		if strings.TrimSpace(key) != "" && text != "" {
+			values[strings.TrimSpace(key)] = text
 		}
 	}
 	return values
@@ -551,9 +595,16 @@ func (t *laneTransport) upLoop(lane string) {
 		reqURL := t.routes.laneURL(lane, "up")
 		headers := buildConnectionHeaders(t.token, t.role, t.peerLabel, t.peerSessionID, t.userAgent, t.cfg)
 		headers["X-Twoman-Cipher"] = t.cipherSuite
-		headers["Content-Type"] = t.cfg.BinaryMediaType
+		requestBody := body
+		if t.uploadBodyMode == "multipart" {
+			multipartBody, contentType := wrapMultipart(body, t.uploadFilename)
+			requestBody = multipartBody
+			headers["Content-Type"] = contentType
+		} else {
+			headers["Content-Type"] = t.cfg.BinaryMediaType
+		}
 
-		err := t.doPost(client, reqURL, headers, body, t.httpTimeout)
+		err := t.doPost(client, reqURL, headers, requestBody, t.httpTimeout)
 		if err != nil {
 			t.requeue(lane, batch)
 			t.resetClient(lane, "up", 0)
@@ -742,6 +793,11 @@ func (t *laneTransport) doDownSession(lane string, workerIdx int) error {
 	client := t.getClient(lane, "down", workerIdx)
 	reqURL := t.routes.laneURL(lane, "down")
 	headers := buildConnectionHeaders(t.token, t.role, t.peerLabel, t.peerSessionID, t.userAgent, t.cfg)
+	if lane == LaneData {
+		for k, v := range buildDownloadHeaders(t.userAgent, t.cfg.BrokerBaseURL, t.uploadFilename) {
+			headers[k] = v
+		}
+	}
 	headers["X-Twoman-Cipher"] = t.cipherSuite
 
 	baseCtx := t.ctx

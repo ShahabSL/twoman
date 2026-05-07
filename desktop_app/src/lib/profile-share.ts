@@ -19,7 +19,7 @@ function decodeBase64Url(input: string) {
 }
 
 export function exportProfileShare(profile: ClientProfile) {
-  const payload = {
+  const payload: Record<string, unknown> = {
     name: profile.name,
     brokerBaseUrl: profile.brokerBaseUrl,
     clientToken: profile.clientToken,
@@ -30,14 +30,15 @@ export function exportProfileShare(profile: ClientProfile) {
     httpPort: profile.httpPort,
     socksPort: profile.socksPort,
     httpTimeoutSeconds: profile.httpTimeoutSeconds,
-    flushDelaySeconds: profile.flushDelaySeconds,
-    maxBatchBytes: profile.maxBatchBytes,
-    dataUploadMaxBatchBytes: profile.dataUploadMaxBatchBytes,
-    dataUploadFlushDelaySeconds: profile.dataUploadFlushDelaySeconds,
     idleRepollCtlSeconds: profile.idleRepollCtlSeconds,
     idleRepollDataSeconds: profile.idleRepollDataSeconds,
     traceEnabled: profile.traceEnabled,
   };
+  if (profile.maxBatchBytes > 0) payload.maxBatchBytes = profile.maxBatchBytes;
+  if (profile.dataUploadMaxBatchBytes > 0) payload.dataUploadMaxBatchBytes = profile.dataUploadMaxBatchBytes;
+  if (profile.dataUploadFlushDelaySeconds > 0) {
+    payload.dataUploadFlushDelaySeconds = profile.dataUploadFlushDelaySeconds;
+  }
   return `${PROFILE_SHARE_PREFIX}${encodeBase64Url(JSON.stringify(payload))}`;
 }
 
@@ -62,11 +63,15 @@ export function importProfileShare(rawText: string): ClientProfile {
     socksPort: payload.socksPort ?? 21167,
     httpTimeoutSeconds: payload.httpTimeoutSeconds ?? 30,
     flushDelaySeconds: payload.flushDelaySeconds ?? 0.01,
-    maxBatchBytes: payload.maxBatchBytes ?? 65536,
-    dataUploadMaxBatchBytes: payload.dataUploadMaxBatchBytes ?? 65536,
-    dataUploadFlushDelaySeconds: payload.dataUploadFlushDelaySeconds ?? 0.004,
+    maxBatchBytes: legacyAutoBatch(payload.maxBatchBytes ?? 0),
+    dataUploadMaxBatchBytes: legacyAutoBatch(payload.dataUploadMaxBatchBytes ?? 0),
+    dataUploadFlushDelaySeconds: payload.dataUploadFlushDelaySeconds ?? 0,
     idleRepollCtlSeconds: payload.idleRepollCtlSeconds ?? 0.05,
     idleRepollDataSeconds: payload.idleRepollDataSeconds ?? 0.1,
     traceEnabled: payload.traceEnabled ?? false,
   };
+}
+
+function legacyAutoBatch(value: number) {
+  return value === 65536 ? 0 : value;
 }

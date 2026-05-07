@@ -1,13 +1,40 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"mime/multipart"
+	"net/textproto"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// wrapMultipart encodes an encrypted upload as a browser-like file upload.
+func wrapMultipart(payload []byte, filename string) ([]byte, string) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	headers := make(textproto.MIMEHeader)
+	headers.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename))
+	headers.Set("Content-Type", "application/octet-stream")
+	part, err := writer.CreatePart(headers)
+	if err == nil {
+		_, _ = part.Write(payload)
+	}
+	_ = writer.Close()
+	return buf.Bytes(), writer.FormDataContentType()
+}
+
+func randomFilename() string {
+	var random [2]byte
+	_, _ = rand.Read(random[:])
+	suffix := fmt.Sprintf("%04x", binary.BigEndian.Uint16(random[:]))
+	exts := []string{".bin", ".pkg", ".wasm", ".dat", ".zip"}
+	return fmt.Sprintf("update-%s-%s%s", time.Now().UTC().Format("20060102"), suffix, exts[int(random[0])%len(exts)])
+}
 
 // defaultUserAgents is the pool rotated when no user_agent is configured.
 var defaultUserAgents = []string{
@@ -94,6 +121,57 @@ func browserHeaders(userAgent, brokerBaseURL string) map[string]string {
 	return h
 }
 
+func buildDownloadHeaders(userAgent, brokerBaseURL, filename string) map[string]string {
+	headers := make(map[string]string)
+	origin := ""
+	referer := ""
+	if parsed, err := url.Parse(brokerBaseURL); err == nil && parsed.Host != "" {
+		origin = parsed.Scheme + "://" + parsed.Host
+		referer = origin + "/"
+	}
+
+	isFirefox := strings.Contains(userAgent, "Firefox")
+	isEdge := strings.Contains(userAgent, "Edg/")
+	if isFirefox {
+		headers["Sec-Fetch-Dest"] = "document"
+		headers["Sec-Fetch-Mode"] = "navigate"
+		headers["Sec-Fetch-Site"] = "none"
+		headers["Sec-Fetch-User"] = "?1"
+	} else {
+		chromeVer := extractChromeVersion(userAgent)
+		if isEdge {
+			edgeVer := extractVersion(userAgent, "Edg/")
+			headers["Sec-CH-UA"] = fmt.Sprintf(`"Microsoft Edge";v="%s", "Chromium";v="%s", "Not-A.Brand";v="99"`, edgeVer, chromeVer)
+		} else {
+			headers["Sec-CH-UA"] = fmt.Sprintf(`"Chromium";v="%s", "Google Chrome";v="%s", "Not-A.Brand";v="99"`, chromeVer, chromeVer)
+		}
+		platform := `"Windows"`
+		if strings.Contains(userAgent, "Macintosh") {
+			platform = `"macOS"`
+		} else if strings.Contains(userAgent, "Linux") && !strings.Contains(userAgent, "Android") {
+			platform = `"Linux"`
+		}
+		headers["Sec-CH-UA-Mobile"] = "?0"
+		headers["Sec-CH-UA-Platform"] = platform
+		headers["Sec-Fetch-Dest"] = "document"
+		headers["Sec-Fetch-Mode"] = "navigate"
+		headers["Sec-Fetch-Site"] = "none"
+		headers["Sec-Fetch-User"] = "?1"
+	}
+
+	headers["Accept"] = "*/*"
+	headers["Accept-Language"] = "en-US,en;q=0.9"
+	headers["Accept-Encoding"] = "identity"
+	headers["Range"] = "bytes=0-"
+	if filename != "" {
+		headers["X-Filename"] = filename
+	}
+	if referer != "" {
+		headers["Referer"] = referer
+	}
+	return headers
+}
+
 // extractChromeVersion returns the major version string from a Chrome UA, e.g. "124".
 func extractChromeVersion(ua string) string {
 	return extractVersion(ua, "Chrome/")
@@ -117,10 +195,11 @@ var templateFieldRe = regexp.MustCompile(`\{([a-zA-Z_][a-zA-Z0-9_]*)\}`)
 // routeProvider builds lane URLs from a base URL + route template,
 // matching the Python RouteProvider class.
 type routeProvider struct {
-	baseURL string
-	route   string // e.g. "/{lane}/{direction}"
-	wsRoute string // e.g. "/{lane}"
-	health  string // e.g. "/health"
+	baseURL    string
+	route      string // e.g. "/{lane}/{direction}"
+	wsRoute    string // e.g. "/{lane}"
+	health     string // e.g. "/health"
+	laneRoutes map[string]string
 }
 
 func newRouteProvider(baseURL, routeTemplate, wsTemplate, healthTemplate string) *routeProvider {
@@ -137,14 +216,18 @@ func newRouteProvider(baseURL, routeTemplate, wsTemplate, healthTemplate string)
 	p, _ := url.Parse(strings.TrimRight(baseURL, "/"))
 	_ = p
 	return &routeProvider{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		route:   norm(routeTemplate, "/{lane}/{direction}"),
-		wsRoute: norm(wsTemplate, "/{lane}"),
-		health:  norm(healthTemplate, "/health"),
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		route:      norm(routeTemplate, "/{lane}/{direction}"),
+		wsRoute:    norm(wsTemplate, "/{lane}"),
+		health:     norm(healthTemplate, "/health"),
+		laneRoutes: normalizeLaneRoutes(nil),
 	}
 }
 
 func (r *routeProvider) laneURL(lane, direction string) string {
+	if route := r.lookupLaneRoute(lane, direction); route != "" {
+		return r.joinPath(route)
+	}
 	path := renderTemplate(r.route, map[string]string{
 		"lane":      lane,
 		"direction": direction,
@@ -169,6 +252,25 @@ func (r *routeProvider) healthURL() string {
 	return r.joinPath(r.health)
 }
 
+func (r *routeProvider) setCamouflage(routeTemplate, healthTemplate string, laneRoutes map[string]string) {
+	if strings.TrimSpace(routeTemplate) != "" {
+		r.route = normalizePath(routeTemplate, r.route)
+	}
+	if strings.TrimSpace(healthTemplate) != "" {
+		r.health = normalizePath(healthTemplate, r.health)
+	}
+	if normalized := normalizeLaneRoutes(laneRoutes); len(normalized) > 0 {
+		r.laneRoutes = normalized
+	}
+}
+
+func (r *routeProvider) lookupLaneRoute(lane, direction string) string {
+	if len(r.laneRoutes) == 0 {
+		return ""
+	}
+	return r.laneRoutes[laneRouteKey(lane, direction)]
+}
+
 func (r *routeProvider) joinPath(extra string) string {
 	parsed, err := url.Parse(r.baseURL)
 	if err != nil {
@@ -179,6 +281,33 @@ func (r *routeProvider) joinPath(extra string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
+}
+
+func normalizePath(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = fallback
+	}
+	if !strings.HasPrefix(value, "/") {
+		value = "/" + value
+	}
+	return value
+}
+
+func laneRouteKey(lane, direction string) string {
+	return strings.TrimSpace(lane) + "/" + strings.TrimSpace(direction)
+}
+
+func normalizeLaneRoutes(raw map[string]string) map[string]string {
+	routes := make(map[string]string)
+	for key, path := range raw {
+		normalizedKey := strings.TrimSpace(strings.ReplaceAll(key, "_", "/"))
+		if normalizedKey == "" || strings.Count(normalizedKey, "/") != 1 || strings.TrimSpace(path) == "" {
+			continue
+		}
+		routes[normalizedKey] = normalizePath(path, "")
+	}
+	return routes
 }
 
 func renderTemplate(tmpl string, ctx map[string]string) string {
@@ -195,10 +324,10 @@ func renderTemplate(tmpl string, ctx map[string]string) string {
 
 // Default identity cookie names, matching Python DEFAULT_IDENTITY_COOKIE_NAMES
 var defaultCookieNames = map[string]string{
-	"role":    "twoman_role",
-	"peer":    "twoman_peer",
-	"session": "twoman_session",
-	"auth":    "twoman_auth",
+	"role":    "_cf_role",
+	"peer":    "_cf_lspa",
+	"session": "_wp_syncId",
+	"auth":    "_cfauth",
 }
 
 func cookieNames(cfg *Config) map[string]string {

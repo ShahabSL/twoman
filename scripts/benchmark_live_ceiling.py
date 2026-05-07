@@ -63,6 +63,7 @@ def parse_server_env(path: Path) -> dict[str, str]:
         else:
             raise SystemExit(f"server env positional format must be ip/user/password or ip/port/password: {path}")
     values.setdefault("user", "root")
+    values.setdefault("port", "22")
     required = {"ip", "password", "port", "user"}
     missing = required - values.keys()
     if missing:
@@ -120,6 +121,7 @@ class SSH:
         self.user = server.get("user") or "root"
         self.password = server["password"]
         self.port = server["port"]
+        self.known_hosts_file = os.environ.get("TWOMAN_SSH_USER_KNOWN_HOSTS_FILE", "")
 
     def run(self, command: str, *, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
         args = [
@@ -133,9 +135,10 @@ class SSH:
             "StrictHostKeyChecking=no",
             "-o",
             "ConnectTimeout=15",
-            f"{self.user}@{self.host}",
-            command,
         ]
+        if self.known_hosts_file:
+            args.extend(["-o", f"UserKnownHostsFile={self.known_hosts_file}"])
+        args.extend([f"{self.user}@{self.host}", command])
         return run(args, timeout=timeout)
 
 
@@ -173,7 +176,15 @@ def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_confi
             print(f"deploy: {line}")
 
 
-def set_remote_agent_variant(ssh: SSH, config_path: str, service_name: str, workers: int, batch: int, flush_delay: float) -> None:
+def set_remote_agent_variant(
+    ssh: SSH,
+    config_path: str,
+    service_name: str,
+    workers: int,
+    batch: int,
+    flush_delay: float,
+    agent_down_parallelism: int = 0,
+) -> None:
     script = f"""
 set -euo pipefail
 python3 - <<'PY'
@@ -185,6 +196,8 @@ cfg.setdefault("upload_profiles", {{}}).setdefault("data", {{}})
 cfg["upload_profiles"]["data"]["max_batch_bytes"] = {batch}
 cfg["upload_profiles"]["data"]["flush_delay_seconds"] = {flush_delay}
 cfg.setdefault("up_workers", {{}})["data"] = {workers}
+if {agent_down_parallelism} > 0:
+    cfg.setdefault("down_parallelism", {{}})["data"] = {agent_down_parallelism}
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cfg, handle, indent=2)
     handle.write("\\n")
@@ -255,19 +268,21 @@ for concurrency in payload["concurrencies"]:
 print(json.dumps(results))
 """
     command = "python3 -c " + shlex.quote(remote)
+    ssh_args = [
+        "sshpass",
+        "-p",
+        ssh.password,
+        "ssh",
+        "-p",
+        ssh.port,
+        "-o",
+        "StrictHostKeyChecking=no",
+    ]
+    if ssh.known_hosts_file:
+        ssh_args.extend(["-o", f"UserKnownHostsFile={ssh.known_hosts_file}"])
+    ssh_args.extend([f"{ssh.user}@{ssh.host}", command])
     proc = subprocess.run(
-        [
-            "sshpass",
-            "-p",
-            ssh.password,
-            "ssh",
-            "-p",
-            ssh.port,
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{ssh.user}@{ssh.host}",
-            command,
-        ],
+        ssh_args,
         input=json.dumps(payload),
         text=True,
         stdout=subprocess.PIPE,
@@ -297,7 +312,18 @@ def wait_for_listen_state(path: Path, timeout: float = 20.0) -> dict[str, Any]:
     raise TimeoutError(f"timed out waiting for {path}")
 
 
-def start_helper(binary: Path, tmp_dir: Path, broker_base_url: str, client_token: str, peer: str) -> tuple[subprocess.Popen[str], int, Path]:
+def start_helper(
+    binary: Path,
+    tmp_dir: Path,
+    broker_base_url: str,
+    client_token: str,
+    peer: str,
+    target_agent_peer_label: str,
+    helper_workers: int = 0,
+    helper_batch: int = 0,
+    helper_down_parallelism: int = 0,
+    helper_flush_delay: float = 0.006,
+) -> tuple[subprocess.Popen[str], int, Path]:
     listen_state = tmp_dir / f"{peer}-listen.json"
     config_path = tmp_dir / f"{peer}.json"
     config = {
@@ -305,6 +331,7 @@ def start_helper(binary: Path, tmp_dir: Path, broker_base_url: str, client_token
         "transport_profile": "auto",
         "broker_base_url": broker_base_url,
         "client_token": client_token,
+        "target_agent_peer_label": target_agent_peer_label,
         "auth_mode": "bearer",
         "legacy_custom_headers_enabled": False,
         "binary_media_type": "image/webp",
@@ -318,16 +345,19 @@ def start_helper(binary: Path, tmp_dir: Path, broker_base_url: str, client_token
         "http_timeout_seconds": 30,
         "heartbeat_interval_seconds": 15,
         "flush_delay_seconds": 0.01,
-        "max_batch_bytes": 65536,
         "verify_tls": True,
-        "upload_profiles": {
-            "data": {
-                "max_batch_bytes": 65536,
-                "flush_delay_seconds": 0.004,
-            }
-        },
-        "up_workers": {"data": 2},
     }
+    if helper_workers > 0:
+        config["up_workers"] = {"data": helper_workers}
+    if helper_down_parallelism > 0:
+        config["down_parallelism"] = {"data": helper_down_parallelism}
+    if helper_batch > 0:
+        config["upload_profiles"] = {
+            "data": {
+                "max_batch_bytes": helper_batch,
+                "flush_delay_seconds": helper_flush_delay,
+            }
+        }
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     log_path = tmp_dir / f"{peer}.log"
     log = log_path.open("w", encoding="utf-8")
@@ -398,19 +428,105 @@ def curl_download_via_helper(port: int, url: str, max_time: int) -> dict[str, An
     return result
 
 
-def tunnel_variant(binary: Path, tmp_dir: Path, broker_base_url: str, client_token: str, workers: int, batch: int, bytes_count: int, download_url: str) -> dict[str, Any]:
-    peer = f"bench-helper-w{workers}-b{batch}-{int(time.time())}"
-    proc, port, log_path = start_helper(binary, tmp_dir, broker_base_url, client_token, peer)
+def curl_upload_via_helper(port: int, url: str, body_path: Path, max_time: int) -> dict[str, Any]:
+    command = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--proxy",
+        f"http://127.0.0.1:{port}",
+        "--request",
+        "POST",
+        "--data-binary",
+        f"@{body_path}",
+        "--output",
+        "/dev/null",
+        "--connect-timeout",
+        "30",
+        "--max-time",
+        str(max_time),
+        "--write-out",
+        "%{http_code} %{time_total} %{speed_upload}",
+        url,
+    ]
     try:
+        proc = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=max_time + 20,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "ok": False,
+            "returncode": None,
+            "timeout": True,
+            "stderr": (exc.stderr or "")[-300:] if isinstance(exc.stderr, str) else "",
+            "stdout": (exc.stdout or "")[-300:] if isinstance(exc.stdout, str) else "",
+        }
+    fields = proc.stdout.strip().split()
+    result: dict[str, Any] = {"returncode": proc.returncode, "stderr": proc.stderr[-300:]}
+    if len(fields) == 3:
+        result.update({"http_code": fields[0], "time_total": float(fields[1]), "speed_upload": float(fields[2])})
+    result["ok"] = proc.returncode == 0 and result.get("http_code", "").startswith("2")
+    return result
+
+
+def tunnel_variant(
+    binary: Path,
+    tmp_dir: Path,
+    broker_base_url: str,
+    client_token: str,
+    target_agent_peer_label: str,
+    agent_workers: int,
+    agent_batch: int,
+    helper_workers: int,
+    helper_batch: int,
+    agent_down_parallelism: int,
+    helper_down_parallelism: int,
+    bytes_count: int,
+    download_url: str,
+    upload_url: str,
+) -> dict[str, Any]:
+    peer = (
+        f"bench-helper-aw{agent_workers}-ab{agent_batch}"
+        f"-hw{helper_workers}-hb{helper_batch}"
+        f"-ad{agent_down_parallelism}-hd{helper_down_parallelism}-{int(time.time())}"
+    )
+    proc, port, log_path = start_helper(
+        binary,
+        tmp_dir,
+        broker_base_url,
+        client_token,
+        peer,
+        target_agent_peer_label,
+        helper_workers,
+        helper_batch,
+        helper_down_parallelism,
+    )
+    try:
+        upload_body = tmp_dir / f"{peer}-upload.bin"
+        with upload_body.open("wb") as handle:
+            handle.truncate(bytes_count)
         warmup_url = f"https://speed.cloudflare.com/__down?bytes={min(1_000_000, bytes_count)}"
         warmup = curl_download_via_helper(port, warmup_url, 90)
-        sample = curl_download_via_helper(port, download_url, 240)
+        download_sample = curl_download_via_helper(port, download_url, 240)
+        upload_sample = curl_upload_via_helper(port, upload_url, upload_body, 240)
         return {
-            "workers": workers,
-            "batch_bytes": batch,
+            "workers": agent_workers,
+            "batch_bytes": agent_batch,
+            "agent_workers": agent_workers,
+            "agent_batch_bytes": agent_batch,
+            "helper_workers": helper_workers,
+            "helper_batch_bytes": helper_batch,
+            "agent_down_parallelism": agent_down_parallelism,
+            "helper_down_parallelism": helper_down_parallelism,
             "bytes": bytes_count,
             "warmup": warmup,
-            "sample": sample,
+            "sample": download_sample,
+            "download_sample": download_sample,
+            "upload_sample": upload_sample,
             "helper_log": str(log_path),
         }
     finally:
@@ -428,13 +544,19 @@ def main() -> int:
     parser.add_argument("--broker-base-url", default="https://mirageclub.ir/parvaneh")
     parser.add_argument("--client-token", default=os.environ.get("TWOMAN_CLIENT_TOKEN", ""))
     parser.add_argument("--agent-token", default=os.environ.get("TWOMAN_AGENT_TOKEN", ""))
+    parser.add_argument("--target-agent-peer-label", default="")
     parser.add_argument("--skip-deploy", action="store_true")
     parser.add_argument("--skip-raw", action="store_true")
     parser.add_argument("--skip-tunnel", action="store_true")
     parser.add_argument("--raw-upload-bytes", type=int, default=5_000_000)
     parser.add_argument("--tunnel-bytes", type=int, default=15_000_000)
     parser.add_argument("--download-url", default="")
+    parser.add_argument("--upload-url", default="https://speed.cloudflare.com/__up")
     parser.add_argument("--variants", default="")
+    parser.add_argument("--helper-workers", type=int, default=0)
+    parser.add_argument("--helper-batch-bytes", type=int, default=0)
+    parser.add_argument("--agent-down-parallelism", type=int, default=0)
+    parser.add_argument("--helper-down-parallelism", type=int, default=0)
     parser.add_argument("--raw-concurrency", default="1,2,3,4,6,8")
     parser.add_argument("--raw-upload-proxy-url", default="socks5h://127.0.0.1:1280")
     parser.add_argument("--remote-agent-config", default="/opt/twoman/config.json")
@@ -469,6 +591,7 @@ def main() -> int:
         "raw_upload_bytes_per_request": args.raw_upload_bytes,
         "tunnel_bytes_per_request": args.tunnel_bytes,
         "download_url": args.download_url or f"https://speed.cloudflare.com/__down?bytes={args.tunnel_bytes}",
+        "upload_url": args.upload_url,
         "raw_upload_proxy_url": args.raw_upload_proxy_url or "direct",
         "remote_agent_config": args.remote_agent_config,
         "remote_agent_service": args.remote_agent_service,
@@ -504,31 +627,110 @@ def main() -> int:
         if args.variants:
             variants = []
             for raw_variant in args.variants.split(","):
-                worker_text, batch_text = raw_variant.split(":", 1)
-                variants.append((int(worker_text), int(batch_text)))
+                fields = raw_variant.split(":")
+                if len(fields) == 2:
+                    agent_workers, agent_batch = fields
+                    variants.append((
+                        int(agent_workers),
+                        int(agent_batch),
+                        args.helper_workers,
+                        args.helper_batch_bytes,
+                        args.agent_down_parallelism,
+                        args.helper_down_parallelism,
+                    ))
+                elif len(fields) == 4:
+                    agent_workers, agent_batch, helper_workers, helper_batch = fields
+                    variants.append((
+                        int(agent_workers),
+                        int(agent_batch),
+                        int(helper_workers),
+                        int(helper_batch),
+                        args.agent_down_parallelism,
+                        args.helper_down_parallelism,
+                    ))
+                elif len(fields) == 6:
+                    agent_workers, agent_batch, helper_workers, helper_batch, agent_down, helper_down = fields
+                    variants.append((
+                        int(agent_workers),
+                        int(agent_batch),
+                        int(helper_workers),
+                        int(helper_batch),
+                        int(agent_down),
+                        int(helper_down),
+                    ))
+                else:
+                    raise SystemExit(
+                        "--variants entries must be agentWorkers:agentBatch, "
+                        "agentWorkers:agentBatch:helperWorkers:helperBatch, or "
+                        "agentWorkers:agentBatch:helperWorkers:helperBatch:agentDown:helperDown"
+                    )
         else:
             worker_sweep = [(1, 131072), (2, 131072), (4, 131072), (6, 131072), (8, 524288)]
             batch_sweep = [(4, 65536), (4, 262144), (4, 524288)]
             variants = worker_sweep + batch_sweep
-        seen: set[tuple[int, int]] = set()
+            variants = [
+                (
+                    workers,
+                    batch,
+                    args.helper_workers,
+                    args.helper_batch_bytes,
+                    args.agent_down_parallelism,
+                    args.helper_down_parallelism,
+                )
+                for workers, batch in variants
+            ]
+        seen: set[tuple[int, int, int, int, int, int]] = set()
         variants = [variant for variant in variants if not (variant in seen or seen.add(variant))]
 
         if not args.skip_tunnel:
             download_url = args.download_url or f"https://speed.cloudflare.com/__down?bytes={args.tunnel_bytes}"
-            for workers, batch in variants:
-                print(f"tunnel: workers={workers} batch={batch}")
-                set_remote_agent_variant(ssh, args.remote_agent_config, args.remote_agent_service, workers, batch, 0.006)
-                sample = tunnel_variant(binary, tmp_dir, args.broker_base_url, client_token, workers, batch, args.tunnel_bytes, download_url)
+            for agent_workers, agent_batch, helper_workers, helper_batch, agent_down, helper_down in variants:
+                helper_desc = "auto"
+                if helper_workers > 0 or helper_batch > 0:
+                    helper_desc = f"{helper_workers}:{helper_batch}"
+                down_desc = "auto"
+                if agent_down > 0 or helper_down > 0:
+                    down_desc = f"agent={agent_down or 'auto'} helper={helper_down or 'auto'}"
+                print(f"tunnel: agent={agent_workers}:{agent_batch} helper={helper_desc} down={down_desc}")
+                set_remote_agent_variant(
+                    ssh,
+                    args.remote_agent_config,
+                    args.remote_agent_service,
+                    agent_workers,
+                    agent_batch,
+                    0.006,
+                    agent_down,
+                )
+                sample = tunnel_variant(
+                    binary,
+                    tmp_dir,
+                    args.broker_base_url,
+                    client_token,
+                    args.target_agent_peer_label,
+                    agent_workers,
+                    agent_batch,
+                    helper_workers,
+                    helper_batch,
+                    agent_down,
+                    helper_down,
+                    args.tunnel_bytes,
+                    download_url,
+                    args.upload_url,
+                )
                 result["tunnel"].append(sample)
                 s = sample["sample"]
+                up = sample["upload_sample"]
                 speed = float(s.get("speed_download") or 0.0)
+                upload_speed = float(up.get("speed_upload") or 0.0)
                 print(
                     "tunnel:"
-                    f" workers={workers}"
-                    f" batch={batch}"
+                    f" agent={agent_workers}:{agent_batch}"
+                    f" helper={helper_desc}"
+                    f" down={down_desc}"
                     f" ok={s.get('ok')}"
                     f" http={s.get('http_code')}"
-                    f" speed={speed / 1024 / 1024:.3f} MiB/s"
+                    f" down={speed / 1024 / 1024:.3f} MiB/s"
+                    f" up={upload_speed / 1024 / 1024:.3f} MiB/s"
                     f" time={s.get('time_total')}"
                 )
 
@@ -538,9 +740,31 @@ def main() -> int:
             result["best_tunnel"] = {
                 "workers": best["workers"],
                 "batch_bytes": best["batch_bytes"],
+                "agent_workers": best["agent_workers"],
+                "agent_batch_bytes": best["agent_batch_bytes"],
+                "helper_workers": best["helper_workers"],
+                "helper_batch_bytes": best["helper_batch_bytes"],
+                "agent_down_parallelism": best["agent_down_parallelism"],
+                "helper_down_parallelism": best["helper_down_parallelism"],
                 "speed_Bps": best["sample"]["speed_download"],
                 "speed_Mbps": best["sample"]["speed_download"] * 8 / 1_000_000,
                 "time_total": best["sample"]["time_total"],
+            }
+        ok_upload_samples = [row for row in result["tunnel"] if row.get("upload_sample", {}).get("ok")]
+        if ok_upload_samples:
+            best_up = max(ok_upload_samples, key=lambda row: float(row["upload_sample"].get("speed_upload") or 0.0))
+            result["best_tunnel_upload"] = {
+                "workers": best_up["workers"],
+                "batch_bytes": best_up["batch_bytes"],
+                "agent_workers": best_up["agent_workers"],
+                "agent_batch_bytes": best_up["agent_batch_bytes"],
+                "helper_workers": best_up["helper_workers"],
+                "helper_batch_bytes": best_up["helper_batch_bytes"],
+                "agent_down_parallelism": best_up["agent_down_parallelism"],
+                "helper_down_parallelism": best_up["helper_down_parallelism"],
+                "speed_Bps": best_up["upload_sample"]["speed_upload"],
+                "speed_Mbps": best_up["upload_sample"]["speed_upload"] * 8 / 1_000_000,
+                "time_total": best_up["upload_sample"]["time_total"],
             }
         if raw_results:
             best_raw = max(raw_results, key=lambda row: float(row.get("aggregate_Bps") or 0.0))
@@ -560,6 +784,8 @@ def main() -> int:
         print(f"best_raw_upload: {result['best_raw_upload']}")
     if "best_tunnel" in result:
         print(f"best_tunnel: {result['best_tunnel']}")
+    if "best_tunnel_upload" in result:
+        print(f"best_tunnel_upload: {result['best_tunnel_upload']}")
     return 0
 
 

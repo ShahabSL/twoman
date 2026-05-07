@@ -53,8 +53,11 @@ pub struct ClientProfile {
     pub socks_port: u16,
     pub http_timeout_seconds: u32,
     pub flush_delay_seconds: f64,
+    #[serde(default)]
     pub max_batch_bytes: u32,
+    #[serde(default)]
     pub data_upload_max_batch_bytes: u32,
+    #[serde(default)]
     pub data_upload_flush_delay_seconds: f64,
     pub idle_repoll_ctl_seconds: f64,
     pub idle_repoll_data_seconds: f64,

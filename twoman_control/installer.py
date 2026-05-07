@@ -356,11 +356,8 @@ def _helper_probe(
             "listen_state_path": str(listen_state_path),
             "log_path": str(log_path),
             "http_timeout_seconds": 30,
-            "flush_delay_seconds": 0.01,
-            "max_batch_bytes": 65536,
             "verify_tls": verify_tls,
             "streaming_up_lanes": [],
-            "upload_profiles": {"data": {"max_batch_bytes": 65536, "flush_delay_seconds": 0.004}},
             "idle_repoll_delay_seconds": {"ctl": 0.05, "data": 0.1},
             "http2_enabled": {"ctl": http2_ctl, "data": http2_data},
         }

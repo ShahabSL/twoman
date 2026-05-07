@@ -755,13 +755,20 @@ func profileFromMap(payload map[string]interface{}) profile {
 		SOCKSPort:                   intField(payload, defaultSOCKSPort, "socksPort", "socks_port"),
 		HTTPTimeoutSeconds:          intField(payload, 30, "httpTimeoutSeconds", "http_timeout_seconds"),
 		FlushDelaySeconds:           floatField(payload, 0.01, "flushDelaySeconds", "flush_delay_seconds"),
-		MaxBatchBytes:               intField(payload, 65536, "maxBatchBytes", "max_batch_bytes"),
-		DataUploadMaxBatchBytes:     intField(payload, 65536, "dataUploadMaxBatchBytes", "data_upload_max_batch_bytes"),
-		DataUploadFlushDelaySeconds: floatField(payload, 0.004, "dataUploadFlushDelaySeconds", "data_upload_flush_delay_seconds"),
+		MaxBatchBytes:               legacyAutoBatch(intField(payload, 0, "maxBatchBytes", "max_batch_bytes")),
+		DataUploadMaxBatchBytes:     legacyAutoBatch(intField(payload, 0, "dataUploadMaxBatchBytes", "data_upload_max_batch_bytes")),
+		DataUploadFlushDelaySeconds: floatField(payload, 0, "dataUploadFlushDelaySeconds", "data_upload_flush_delay_seconds"),
 		IdleRepollCtlSeconds:        floatField(payload, 0.05, "idleRepollCtlSeconds", "idle_repoll_ctl_seconds"),
 		IdleRepollDataSeconds:       floatField(payload, 0.1, "idleRepollDataSeconds", "idle_repoll_data_seconds"),
 		TraceEnabled:                boolField(payload, false, "traceEnabled", "trace_enabled"),
 	}
+}
+
+func legacyAutoBatch(value int) int {
+	if value == 65536 {
+		return 0
+	}
+	return value
 }
 
 func (p profile) validate() error {
@@ -794,6 +801,10 @@ func loadProfiles(p paths) (profileStore, error) {
 	var store profileStore
 	if err := json.Unmarshal(data, &store); err != nil {
 		return profileStore{}, err
+	}
+	for index := range store.Profiles {
+		store.Profiles[index].MaxBatchBytes = legacyAutoBatch(store.Profiles[index].MaxBatchBytes)
+		store.Profiles[index].DataUploadMaxBatchBytes = legacyAutoBatch(store.Profiles[index].DataUploadMaxBatchBytes)
 	}
 	return store, nil
 }
@@ -957,15 +968,8 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 		"backoff_initial_delay_seconds": 0.1,
 		"backoff_max_delay_seconds":     5,
 		"flush_delay_seconds":           prof.FlushDelaySeconds,
-		"max_batch_bytes":               prof.MaxBatchBytes,
 		"verify_tls":                    prof.VerifyTLS,
 		"streaming_up_lanes":            []string{},
-		"upload_profiles": map[string]interface{}{
-			"data": map[string]interface{}{
-				"max_batch_bytes":     prof.DataUploadMaxBatchBytes,
-				"flush_delay_seconds": prof.DataUploadFlushDelaySeconds,
-			},
-		},
 		"idle_repoll_delay_seconds": map[string]float64{
 			"ctl":  prof.IdleRepollCtlSeconds,
 			"data": prof.IdleRepollDataSeconds,
@@ -974,6 +978,19 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 			"ctl":  prof.HTTP2Ctl,
 			"data": prof.HTTP2Data,
 		},
+	}
+	if prof.MaxBatchBytes > 0 {
+		config["max_batch_bytes"] = prof.MaxBatchBytes
+	}
+	dataProfile := map[string]interface{}{}
+	if prof.DataUploadMaxBatchBytes > 0 {
+		dataProfile["max_batch_bytes"] = prof.DataUploadMaxBatchBytes
+	}
+	if prof.DataUploadFlushDelaySeconds > 0 {
+		dataProfile["flush_delay_seconds"] = prof.DataUploadFlushDelaySeconds
+	}
+	if len(dataProfile) > 0 {
+		config["upload_profiles"] = map[string]interface{}{"data": dataProfile}
 	}
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

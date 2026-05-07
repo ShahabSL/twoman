@@ -8,14 +8,16 @@ import (
 // Config is shared by the Go helper and hidden agent dataplane.
 // All fields are optional; SetDefaults fills sensible values.
 type Config struct {
-	BrokerBaseURL   string `json:"broker_base_url"`
-	ClientToken     string `json:"client_token"`
-	AgentToken      string `json:"agent_token"`
-	AuthMode        string `json:"auth_mode"`
-	BinaryMediaType string `json:"binary_media_type"`
-	RouteTemplate   string `json:"route_template"`
-	HSRouteTemplate string `json:"ws_route_template"`
-	HealthTemplate  string `json:"health_template"`
+	BrokerBaseURL   string            `json:"broker_base_url"`
+	ClientToken     string            `json:"client_token"`
+	AgentToken      string            `json:"agent_token"`
+	AuthMode        string            `json:"auth_mode"`
+	BinaryMediaType string            `json:"binary_media_type"`
+	UploadBodyMode  string            `json:"upload_body_mode"`
+	RouteTemplate   string            `json:"route_template"`
+	HSRouteTemplate string            `json:"ws_route_template"`
+	HealthTemplate  string            `json:"health_template"`
+	LaneRoutes      map[string]string `json:"lane_routes"`
 
 	ListenHost           string `json:"listen_host"`
 	HTTPListenPort       int    `json:"http_listen_port"`
@@ -139,6 +141,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.BinaryMediaType == "" {
 		c.BinaryMediaType = "image/webp"
+	}
+	if c.UploadBodyMode == "" {
+		c.UploadBodyMode = "multipart"
 	}
 	if c.RouteTemplate == "" {
 		c.RouteTemplate = "/{lane}/{direction}"

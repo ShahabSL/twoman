@@ -24,9 +24,9 @@ TWOMAN_LOG_PATH="${TWOMAN_LOG_PATH:-${TWOMAN_LOG_DIR%/}/helper.log}"
 TWOMAN_LISTEN_STATE_PATH="${TWOMAN_LISTEN_STATE_PATH:-local_client/runtime/listen-state.json}"
 TWOMAN_IDLE_REPOLL_CTL="${TWOMAN_IDLE_REPOLL_CTL:-0.05}"
 TWOMAN_IDLE_REPOLL_DATA="${TWOMAN_IDLE_REPOLL_DATA:-0.1}"
-TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-524288}"
-TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-0.006}"
-TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-8}"
+TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-}"
+TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-}"
+TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-}"
 TWOMAN_AUTH_MODE="${TWOMAN_AUTH_MODE:-bearer}"
 TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED="${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED:-false}"
 TWOMAN_BINARY_MEDIA_TYPE="${TWOMAN_BINARY_MEDIA_TYPE:-image/webp}"
@@ -51,51 +51,71 @@ if [ ! -f "${CONFIG_PATH}" ]; then
   require_env TWOMAN_CLIENT_TOKEN
   mkdir -p "$(dirname "${CONFIG_PATH}")"
   mkdir -p "$(dirname "${TWOMAN_LOG_PATH}")"
-  cat > "${CONFIG_PATH}" <<EOF
-{
-  "transport": "${TWOMAN_TRANSPORT}",
-  "transport_profile": "auto",
-  "broker_base_url": "${TWOMAN_BROKER_BASE_URL}",
-  "client_token": "${TWOMAN_CLIENT_TOKEN}",
-  "target_agent_peer_label": "${TWOMAN_TARGET_AGENT_PEER_LABEL}",
-  "auth_mode": "${TWOMAN_AUTH_MODE}",
-  "legacy_custom_headers_enabled": ${TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED},
-  "binary_media_type": "${TWOMAN_BINARY_MEDIA_TYPE}",
-  "route_template": "${TWOMAN_ROUTE_TEMPLATE}",
-  "health_template": "${TWOMAN_HEALTH_TEMPLATE}",
-  "listen_host": "${LISTEN_HOST}",
-  "http_listen_port": ${HTTP_PORT},
-  "socks_listen_port": ${SOCKS_PORT},
-  "listen_state_path": "${TWOMAN_LISTEN_STATE_PATH}",
-  "http_timeout_seconds": 30,
-  "heartbeat_interval_seconds": 15,
-  "interval_jitter_ratio": 0.2,
-  "backoff_initial_delay_seconds": 0.1,
-  "backoff_max_delay_seconds": 5,
-  "flush_delay_seconds": 0.01,
-  "max_batch_bytes": 65536,
-  "log_path": "${TWOMAN_LOG_PATH}",
-  "verify_tls": ${VERIFY_TLS},
-  "upload_profiles": {
-    "data": {
-      "max_batch_bytes": ${TWOMAN_DATA_UP_MAX_BATCH_BYTES},
-      "flush_delay_seconds": ${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS}
-    }
-  },
-  "up_workers": {
-    "data": ${TWOMAN_DATA_UP_WORKERS}
-  },
-  "streaming_up_lanes": ${STREAMING_UP_JSON},
-  "idle_repoll_delay_seconds": {
-    "ctl": ${TWOMAN_IDLE_REPOLL_CTL},
-    "data": ${TWOMAN_IDLE_REPOLL_DATA}
-  },
-  "http2_enabled": {
-    "ctl": ${TWOMAN_HTTP2_CTL},
-    "data": ${TWOMAN_HTTP2_DATA}
-  }
+  export TWOMAN_TRANSPORT TWOMAN_BROKER_BASE_URL TWOMAN_CLIENT_TOKEN TWOMAN_TARGET_AGENT_PEER_LABEL
+  export TWOMAN_AUTH_MODE TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED TWOMAN_BINARY_MEDIA_TYPE
+  export TWOMAN_ROUTE_TEMPLATE TWOMAN_HEALTH_TEMPLATE LISTEN_HOST HTTP_PORT SOCKS_PORT
+  export TWOMAN_LISTEN_STATE_PATH TWOMAN_LOG_PATH VERIFY_TLS STREAMING_UP_JSON
+  export TWOMAN_IDLE_REPOLL_CTL TWOMAN_IDLE_REPOLL_DATA TWOMAN_HTTP2_CTL TWOMAN_HTTP2_DATA
+  export TWOMAN_DATA_UP_MAX_BATCH_BYTES TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS TWOMAN_DATA_UP_WORKERS
+  python3 - <<'PY' > "${CONFIG_PATH}"
+import json
+import os
+
+def as_bool(name):
+    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
+
+def maybe_int(name):
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else None
+
+def maybe_float(name):
+    value = os.environ.get(name, "").strip()
+    return float(value) if value else None
+
+config = {
+    "transport": os.environ["TWOMAN_TRANSPORT"],
+    "transport_profile": "auto",
+    "broker_base_url": os.environ["TWOMAN_BROKER_BASE_URL"],
+    "client_token": os.environ["TWOMAN_CLIENT_TOKEN"],
+    "target_agent_peer_label": os.environ.get("TWOMAN_TARGET_AGENT_PEER_LABEL", ""),
+    "auth_mode": os.environ["TWOMAN_AUTH_MODE"],
+    "legacy_custom_headers_enabled": as_bool("TWOMAN_LEGACY_CUSTOM_HEADERS_ENABLED"),
+    "binary_media_type": os.environ["TWOMAN_BINARY_MEDIA_TYPE"],
+    "route_template": os.environ["TWOMAN_ROUTE_TEMPLATE"],
+    "health_template": os.environ["TWOMAN_HEALTH_TEMPLATE"],
+    "listen_host": os.environ["LISTEN_HOST"],
+    "http_listen_port": int(os.environ["HTTP_PORT"]),
+    "socks_listen_port": int(os.environ["SOCKS_PORT"]),
+    "listen_state_path": os.environ["TWOMAN_LISTEN_STATE_PATH"],
+    "http_timeout_seconds": 30,
+    "heartbeat_interval_seconds": 15,
+    "interval_jitter_ratio": 0.2,
+    "backoff_initial_delay_seconds": 0.1,
+    "backoff_max_delay_seconds": 5,
+    "flush_delay_seconds": 0.01,
+    "log_path": os.environ["TWOMAN_LOG_PATH"],
+    "verify_tls": as_bool("VERIFY_TLS"),
+    "streaming_up_lanes": json.loads(os.environ["STREAMING_UP_JSON"]),
+    "idle_repoll_delay_seconds": {
+        "ctl": float(os.environ["TWOMAN_IDLE_REPOLL_CTL"]),
+        "data": float(os.environ["TWOMAN_IDLE_REPOLL_DATA"]),
+    },
+    "http2_enabled": {
+        "ctl": as_bool("TWOMAN_HTTP2_CTL"),
+        "data": as_bool("TWOMAN_HTTP2_DATA"),
+    },
 }
-EOF
+data_profile = {}
+if (batch := maybe_int("TWOMAN_DATA_UP_MAX_BATCH_BYTES")):
+    data_profile["max_batch_bytes"] = batch
+if (flush := maybe_float("TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS")) is not None:
+    data_profile["flush_delay_seconds"] = flush
+if data_profile:
+    config["upload_profiles"] = {"data": data_profile}
+if (workers := maybe_int("TWOMAN_DATA_UP_WORKERS")):
+    config["up_workers"] = {"data": workers}
+print(json.dumps(config, indent=2))
+PY
 fi
 
 mkdir -p "$(dirname "${TWOMAN_LOG_PATH}")"

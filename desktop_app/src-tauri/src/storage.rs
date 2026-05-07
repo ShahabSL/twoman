@@ -87,7 +87,11 @@ fn portable_root_from_exe_path(exe_path: &Path) -> Option<PathBuf> {
 }
 
 pub fn load_profiles(paths: &AppPaths) -> Result<Vec<ClientProfile>, String> {
-    read_json_list(&paths.profiles_file)
+    let mut profiles: Vec<ClientProfile> = read_json_list(&paths.profiles_file)?;
+    for profile in &mut profiles {
+        normalize_profile_transport_tuning(profile);
+    }
+    Ok(profiles)
 }
 
 pub fn save_profiles(paths: &AppPaths, profiles: &[ClientProfile]) -> Result<(), String> {
@@ -207,6 +211,15 @@ pub fn validate_profile(profile: &ClientProfile) -> Result<(), String> {
         return Err("client token is required".into());
     }
     Ok(())
+}
+
+fn normalize_profile_transport_tuning(profile: &mut ClientProfile) {
+    if profile.max_batch_bytes == 65_536 {
+        profile.max_batch_bytes = 0;
+    }
+    if profile.data_upload_max_batch_bytes == 65_536 {
+        profile.data_upload_max_batch_bytes = 0;
+    }
 }
 
 pub fn validate_share(share: &SharedProxy) -> Result<(), String> {

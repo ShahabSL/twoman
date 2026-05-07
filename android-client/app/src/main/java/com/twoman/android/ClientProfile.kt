@@ -18,9 +18,9 @@ data class ClientProfile(
     val socksPort: Int = 0,
     val httpTimeoutSeconds: Int = 30,
     val flushDelaySeconds: Double = 0.01,
-    val maxBatchBytes: Int = 65536,
-    val dataUploadMaxBatchBytes: Int = 65536,
-    val dataUploadFlushDelaySeconds: Double = 0.004,
+    val maxBatchBytes: Int = 0,
+    val dataUploadMaxBatchBytes: Int = 0,
+    val dataUploadFlushDelaySeconds: Double = 0.0,
     val vpnDnsProxyIp: String = DEFAULT_VPN_DNS_PROXY_IP,
     val vpnDnsServers: List<String> = listOf("1.1.1.1", "8.8.8.8"),
     val idleRepollCtlSeconds: Double = 0.05,
@@ -71,23 +71,32 @@ data class ClientProfile(
         put("log_path", logPath)
         put("http_timeout_seconds", httpTimeoutSeconds)
         put("flush_delay_seconds", flushDelaySeconds)
-        put("max_batch_bytes", maxBatchBytes)
+        if (maxBatchBytes > 0) {
+            put("max_batch_bytes", maxBatchBytes)
+        }
         put("verify_tls", verifyTls)
         put("streaming_up_lanes", org.json.JSONArray())
         put("vpn_dns_proxy_ip", vpnDnsProxyIp)
         put("vpn_dns_servers", org.json.JSONArray(vpnDnsServers))
-        put(
-            "upload_profiles",
-            JSONObject().apply {
-                put(
-                    "data",
-                    JSONObject().apply {
-                        put("max_batch_bytes", dataUploadMaxBatchBytes)
-                        put("flush_delay_seconds", dataUploadFlushDelaySeconds)
-                    },
-                )
-            },
-        )
+        val dataUploadProfile = JSONObject().apply {
+            if (dataUploadMaxBatchBytes > 0) {
+                put("max_batch_bytes", dataUploadMaxBatchBytes)
+            }
+            if (dataUploadFlushDelaySeconds > 0.0) {
+                put("flush_delay_seconds", dataUploadFlushDelaySeconds)
+            }
+        }
+        if (dataUploadProfile.length() > 0) {
+            put(
+                "upload_profiles",
+                JSONObject().apply {
+                    put(
+                        "data",
+                        dataUploadProfile,
+                    )
+                },
+            )
+        }
         put(
             "idle_repoll_delay_seconds",
             JSONObject().apply {
@@ -117,10 +126,11 @@ data class ClientProfile(
             put("httpPort", httpPort)
             put("socksPort", socksPort)
             put("httpTimeoutSeconds", httpTimeoutSeconds)
-            put("flushDelaySeconds", flushDelaySeconds)
-            put("maxBatchBytes", maxBatchBytes)
-            put("dataUploadMaxBatchBytes", dataUploadMaxBatchBytes)
-            put("dataUploadFlushDelaySeconds", dataUploadFlushDelaySeconds)
+            if (maxBatchBytes > 0) put("maxBatchBytes", maxBatchBytes)
+            if (dataUploadMaxBatchBytes > 0) put("dataUploadMaxBatchBytes", dataUploadMaxBatchBytes)
+            if (dataUploadFlushDelaySeconds > 0.0) {
+                put("dataUploadFlushDelaySeconds", dataUploadFlushDelaySeconds)
+            }
             put("vpnDnsProxyIp", vpnDnsProxyIp)
             put("vpnDnsServers", org.json.JSONArray(vpnDnsServers))
             put("idleRepollCtlSeconds", idleRepollCtlSeconds)
@@ -154,9 +164,9 @@ data class ClientProfile(
             socksPort = json.optInt("socksPort", 0),
             httpTimeoutSeconds = json.optInt("httpTimeoutSeconds", 30),
             flushDelaySeconds = json.optDouble("flushDelaySeconds", 0.01),
-            maxBatchBytes = json.optInt("maxBatchBytes", 65536),
-            dataUploadMaxBatchBytes = json.optInt("dataUploadMaxBatchBytes", 65536),
-            dataUploadFlushDelaySeconds = json.optDouble("dataUploadFlushDelaySeconds", 0.004),
+            maxBatchBytes = legacyAutoBatch(json.optInt("maxBatchBytes", 0)),
+            dataUploadMaxBatchBytes = legacyAutoBatch(json.optInt("dataUploadMaxBatchBytes", 0)),
+            dataUploadFlushDelaySeconds = json.optDouble("dataUploadFlushDelaySeconds", 0.0),
             vpnDnsProxyIp = json.optString("vpnDnsProxyIp").ifBlank { DEFAULT_VPN_DNS_PROXY_IP },
             vpnDnsServers = json.optJSONArray("vpnDnsServers")?.let { array ->
                 buildList {
@@ -190,3 +200,5 @@ data class ClientProfile(
         }
     }
 }
+
+private fun legacyAutoBatch(value: Int): Int = if (value == 65536) 0 else value

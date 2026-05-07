@@ -92,6 +92,9 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	if !strings.Contains(string(configData), `"target_agent_peer_label"`) {
 		t.Fatal("runtime config did not include target agent field")
 	}
+	if strings.Contains(string(configData), `"upload_profiles"`) {
+		t.Fatal("auto profile unexpectedly wrote upload profile overrides")
+	}
 	out.Reset()
 	if err := run([]string{"--home", home, "config"}, &out, &errOut); err != nil {
 		t.Fatalf("config failed: %v", err)

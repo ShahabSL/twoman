@@ -70,6 +70,13 @@ const DEFAULT_RECENT_EVENT_LIMIT = 200;
 const DEFAULT_BINARY_MEDIA_TYPE = "image/webp";
 const DEFAULT_MAX_FRAME_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const DEFAULT_UPLOAD_PROBE_EVENT_LIMIT = 4096;
+const DEFAULT_UPLOAD_BODY_MODE = "multipart";
+const DEFAULT_IDENTITY_COOKIE_NAMES = {
+  role: "_cf_role",
+  peer: "_cf_lspa",
+  session: "_wp_syncId",
+  auth: "_cfauth"
+};
 let RUNTIME_LOG_PATH = process.env.TWOMAN_RUNTIME_LOG_PATH || "";
 let EVENT_LOG_PATH = process.env.TWOMAN_EVENT_LOG_PATH || "";
 let RUNTIME_LOG_MAX_BYTES = DEFAULT_RUNTIME_LOG_MAX_BYTES;
@@ -118,6 +125,8 @@ function brokerCapabilities() {
   const maxFramePayloadBytes = state ? state.maxFramePayloadBytes : DEFAULT_MAX_FRAME_PAYLOAD_BYTES;
   const helperDataUpWorkers = state ? state.helperDataUpWorkers : 8;
   const agentDataUpWorkers = state ? state.agentDataUpWorkers : 8;
+  const helperDataDownParallelism = state ? state.helperDataDownParallelism : 4;
+  const agentDataDownParallelism = state ? state.agentDataDownParallelism : 4;
   const helperDataUploadProfile = state ? state.helperDataUploadProfile : { maxBatchBytes: 524288, flushDelaySeconds: 0.006 };
   const agentDataUploadProfile = state ? state.agentDataUploadProfile : { maxBatchBytes: 524288, flushDelaySeconds: 0.006 };
   const supportedProfiles = [PROFILE_MANAGED_HOST_HTTP];
@@ -137,7 +146,7 @@ function brokerCapabilities() {
         helper: {
           http2_enabled: { ctl: true, data: false },
           down_lanes: helperDownCombinedDataLane ? ["data"] : ["ctl", "data"],
-          down_parallelism: helperDownCombinedDataLane ? { data: 2 } : { ctl: 1, data: 1 },
+          down_parallelism: helperDownCombinedDataLane ? { data: helperDataDownParallelism } : { ctl: 1, data: helperDataDownParallelism },
           up_workers: { data: helperDataUpWorkers },
           upload_profiles: {
             data: {
@@ -152,7 +161,7 @@ function brokerCapabilities() {
         agent: {
           http2_enabled: { ctl: false, data: false },
           down_lanes: agentDownCombinedDataLane ? ["data"] : ["ctl", "data"],
-          down_parallelism: agentDownCombinedDataLane ? { data: 2 } : { ctl: 1, data: 1 },
+          down_parallelism: agentDownCombinedDataLane ? { data: agentDataDownParallelism } : { ctl: 1, data: agentDataDownParallelism },
           up_workers: { data: agentDataUpWorkers },
           proxy_keepalive_connections: 2,
           proxy_keepalive_expiry_seconds: 15.0,
@@ -180,8 +189,11 @@ function brokerCapabilities() {
     },
     camouflage: {
       binary_media_type: BINARY_MEDIA_TYPE,
+      upload_body_mode: loadedConfig.upload_body_mode || DEFAULT_UPLOAD_BODY_MODE,
       route_template: loadedConfig.route_template || "/{lane}/{direction}",
-      health_template: loadedConfig.health_template || "/health"
+      health_template: loadedConfig.health_template || "/health",
+      lane_routes: loadedConfig.lane_routes || {},
+      identity_cookie_names: loadedConfig.identity_cookie_names || DEFAULT_IDENTITY_COOKIE_NAMES
     }
   };
 }
@@ -281,6 +293,36 @@ function normalizeLaneProfiles(config) {
       }
       const minimum = (key === "maxBytes" || key === "maxFrames") ? 1 : 0;
       normalized[lane][key] = Math.max(minimum, Math.trunc(numeric));
+    }
+  }
+  return normalized;
+}
+
+function normalizeRoutePath(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.startsWith("/") ? text : `/${text}`;
+}
+
+function normalizeLaneRoutes(raw) {
+  const normalized = new Map();
+  if (!raw || typeof raw !== "object") {
+    return normalized;
+  }
+  for (const [rawKey, rawPath] of Object.entries(raw)) {
+    const key = String(rawKey || "").trim().replace(/_/g, "/");
+    if (!key || key.split("/").length !== 2) {
+      continue;
+    }
+    const route = normalizeRoutePath(rawPath);
+    if (!route) {
+      continue;
+    }
+    const [lane, direction] = key.split("/");
+    if ((lane === LANE_CTL || lane === LANE_DATA) && (direction === "up" || direction === "down")) {
+      normalized.set(route, { lane, direction });
     }
   }
   return normalized;
@@ -584,6 +626,8 @@ class BrokerState {
     this.agentDownCombinedDataLane = Boolean(config.agent_down_combined_data_lane);
     this.helperDataUpWorkers = coerceInt(config.helper_data_up_workers, 8);
     this.agentDataUpWorkers = coerceInt(config.agent_data_up_workers, 8);
+    this.helperDataDownParallelism = coerceInt(config.helper_data_down_parallelism, 4);
+    this.agentDataDownParallelism = coerceInt(config.agent_data_down_parallelism, 4);
     this.helperDataUploadProfile = {
       maxBatchBytes: coerceInt(config.helper_data_upload_max_batch_bytes, 524288),
       flushDelaySeconds: Math.max(0, Number(config.helper_data_upload_flush_delay_seconds ?? 0.006))
@@ -597,6 +641,7 @@ class BrokerState {
     this.streamingDataDownHelper = Boolean(config.streaming_data_down_helper);
     this.streamingCtlDownAgent = Boolean(config.streaming_ctl_down_agent);
     this.streamingDataDownAgent = Boolean(config.streaming_data_down_agent);
+    this.laneRoutes = normalizeLaneRoutes(config.lane_routes);
     this.laneProfiles = normalizeLaneProfiles(config);
     this.preferredAgentPeerLabel = String(
       config.preferred_agent_peer_label || process.env.TWOMAN_PREFERRED_AGENT_PEER_LABEL || "agent-main"
@@ -624,6 +669,10 @@ class BrokerState {
     this.recentEvents = [];
   }
 
+  matchLaneRoute(route) {
+    return this.laneRoutes.get(normalizeRoutePath(route)) || null;
+  }
+
   normalizeDownWaitMs(rawConfig) {
     const ctl = Math.max(50, Number(rawConfig.ctl || rawConfig.control || 1000));
     const data = Math.max(50, Number(rawConfig.data || 1000));
@@ -649,6 +698,11 @@ class BrokerState {
 
   downWaitMsForRole(role) {
     return this.downWaitMsByRole[role] || this.downWaitMsByRole.helper;
+  }
+
+  maxUploadBodyBytesForRole(role) {
+    const profile = role === "agent" ? this.agentDataUploadProfile : this.helperDataUploadProfile;
+    return Math.max(this.maxFramePayloadBytes + 1024 * 1024, profile.maxBatchBytes + 1024 * 1024);
   }
 
   helperControlLane() {
@@ -1845,10 +1899,49 @@ function normalizeMediaType(value) {
 }
 
 function validateBinaryMediaType(value) {
-  const allowed = new Set([BINARY_MEDIA_TYPE, "application/octet-stream"]);
+  const allowed = new Set([BINARY_MEDIA_TYPE, "application/octet-stream", "multipart/form-data"]);
   if (!allowed.has(normalizeMediaType(value))) {
     throw new Error(`invalid binary content type: ${value || "<missing>"}`);
   }
+}
+
+function extractMultipartPayload(contentType, body) {
+  const match = String(contentType || "").match(/boundary=([^\s;]+)/i);
+  if (!match) {
+    throw new Error("multipart: missing boundary");
+  }
+  const boundary = match[1].replace(/^"|"$/g, "");
+  const partHeader = Buffer.from(`--${boundary}\r\n`);
+  const start = body.indexOf(partHeader);
+  if (start < 0) {
+    throw new Error("multipart: boundary not found");
+  }
+  const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), start + partHeader.length);
+  if (headerEnd < 0) {
+    throw new Error("multipart: part headers not terminated");
+  }
+  const dataStart = headerEnd + 4;
+  const closing = Buffer.from(`\r\n--${boundary}`);
+  const dataEnd = body.indexOf(closing, dataStart);
+  if (dataEnd < 0) {
+    throw new Error("multipart: closing boundary not found");
+  }
+  return body.subarray(dataStart, dataEnd);
+}
+
+async function readLimitedBody(req, maxBytes) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      const error = new Error("request body too large");
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 function isHealthRoute(route) {
@@ -2020,7 +2113,7 @@ async function handleLaneDownStream(peer, lane, res, authToken, cipherSuite) {
     closed = true;
   });
   res.writeHead(200, {
-    "Content-Type": BINARY_MEDIA_TYPE,
+    "Content-Type": lane === LANE_DATA ? "application/octet-stream" : BINARY_MEDIA_TYPE,
     "Cache-Control": "no-store",
     "X-Accel-Buffering": "no",
     Connection: "keep-alive",
@@ -2099,7 +2192,7 @@ const server = http.createServer(async (req, res) => {
     await handleUploadProbe(req, res);
     return;
   }
-  const parsedRoute = parseLaneRoute(route);
+  const parsedRoute = state.matchLaneRoute(route) || parseLaneRoute(route);
   if (parsedRoute && (parsedRoute.lane === LANE_CTL || parsedRoute.lane === LANE_DATA) && (parsedRoute.direction === "up" || parsedRoute.direction === "down")) {
     const lane = parsedRoute.lane;
     const direction = parsedRoute.direction;
@@ -2112,36 +2205,47 @@ const server = http.createServer(async (req, res) => {
       jsonResponse(res, 400, { error: "unsupported cipher suite" });
       return;
     }
-	    const peer = state.ensurePeer(headers.role, headers.peer, headers.session, headers.targetAgentPeerLabel);
+    const peer = state.ensurePeer(headers.role, headers.peer, headers.session, headers.targetAgentPeerLabel);
     if (req.method === "POST" && direction === "up") {
+      const contentType = req.headers["content-type"] || "";
       try {
-        validateBinaryMediaType(req.headers["content-type"]);
+        validateBinaryMediaType(contentType);
       } catch (error) {
         jsonResponse(res, 415, { error: error.message });
         return;
       }
       const decoder = new FrameDecoder(state.maxFramePayloadBytes);
       let frameCount = 0;
-      let initCipher = null;
-      let ivBuffer = Buffer.alloc(0);
       const tokenStr = tokenForAuthenticatedHeaders(headers);
 
       try {
-        for await (let chunk of req) {
-          if (!initCipher) {
+        if (normalizeMediaType(contentType) === "multipart/form-data") {
+          const rawBody = await readLimitedBody(req, state.maxUploadBodyBytesForRole(headers.role));
+          const payload = extractMultipartPayload(contentType, rawBody);
+          if (payload.length > 16) {
+            const cipher = new TransportCipher(Buffer.from(tokenStr), payload.subarray(0, 16), headers.cipherSuite);
+            const ptChunk = cipher.process(payload.subarray(16));
+            frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
+          }
+        } else {
+          let initCipher = null;
+          let ivBuffer = Buffer.alloc(0);
+          for await (let chunk of req) {
+            if (!initCipher) {
               const needed = 16 - ivBuffer.length;
               if (chunk.length >= needed) {
-                  ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
-                  chunk = chunk.subarray(needed);
-                  initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer, headers.cipherSuite);
+                ivBuffer = Buffer.concat([ivBuffer, chunk.subarray(0, needed)]);
+                chunk = chunk.subarray(needed);
+                initCipher = new TransportCipher(Buffer.from(tokenStr), ivBuffer, headers.cipherSuite);
               } else {
-                  ivBuffer = Buffer.concat([ivBuffer, chunk]);
-                  continue;
+                ivBuffer = Buffer.concat([ivBuffer, chunk]);
+                continue;
               }
-          }
-          if (chunk.length > 0) {
+            }
+            if (chunk.length > 0) {
               const ptChunk = initCipher.process(chunk);
               frameCount += processInboundFrames(headers.role, headers.session, lane, decoder, ptChunk);
+            }
           }
         }
       } catch (error) {
@@ -2177,12 +2281,22 @@ const server = http.createServer(async (req, res) => {
       const iv = crypto.randomBytes(16);
       const cipher = new TransportCipher(Buffer.from(tokenStr), iv, headers.cipherSuite);
       const encPayload = Buffer.concat([iv, cipher.process(payload)]);
-
-      res.writeHead(200, {
-        "Content-Type": BINARY_MEDIA_TYPE,
+      const responseHeaders = {
+        "Content-Type": lane === LANE_DATA ? "application/octet-stream" : BINARY_MEDIA_TYPE,
         "Content-Length": String(encPayload.length),
         "Cache-Control": "no-store"
-      });
+      };
+      let statusCode = 200;
+      if (lane === LANE_DATA) {
+        responseHeaders["Accept-Ranges"] = "bytes";
+        responseHeaders["Content-Disposition"] = 'attachment; filename="update.dat"';
+        if (req.headers.range) {
+          statusCode = 206;
+          responseHeaders["Content-Range"] = `bytes 0-${Math.max(0, encPayload.length - 1)}/${encPayload.length}`;
+        }
+      }
+
+      res.writeHead(statusCode, responseHeaders);
       res.end(encPayload);
       return;
     }

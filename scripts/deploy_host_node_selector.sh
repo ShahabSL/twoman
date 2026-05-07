@@ -144,12 +144,19 @@ TWOMAN_UPLOAD_PROBE_EVENT_LIMIT="${TWOMAN_UPLOAD_PROBE_EVENT_LIMIT:-4096}"
 TWOMAN_AGENT_PEER_ID="${TWOMAN_AGENT_PEER_ID:-agent-main}"
 TWOMAN_HELPER_DATA_UP_WORKERS="${TWOMAN_HELPER_DATA_UP_WORKERS:-8}"
 TWOMAN_AGENT_DATA_UP_WORKERS="${TWOMAN_AGENT_DATA_UP_WORKERS:-8}"
+TWOMAN_HELPER_DATA_DOWN_PARALLELISM="${TWOMAN_HELPER_DATA_DOWN_PARALLELISM:-4}"
+TWOMAN_AGENT_DATA_DOWN_PARALLELISM="${TWOMAN_AGENT_DATA_DOWN_PARALLELISM:-4}"
 TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES="${TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES:-524288}"
 TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES="${TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES:-524288}"
 TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS:-0.006}"
 TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS="${TWOMAN_AGENT_DATA_UPLOAD_FLUSH_DELAY_SECONDS:-0.006}"
 TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE="${TWOMAN_HELPER_DOWN_COMBINED_DATA_LANE:-true}"
 TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE="${TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE:-true}"
+TWOMAN_UPLOAD_BODY_MODE="${TWOMAN_UPLOAD_BODY_MODE:-multipart}"
+TWOMAN_LANE_ROUTE_CTL_UP="${TWOMAN_LANE_ROUTE_CTL_UP:-/assets/sync/manifest}"
+TWOMAN_LANE_ROUTE_CTL_DOWN="${TWOMAN_LANE_ROUTE_CTL_DOWN:-/assets/sync/events}"
+TWOMAN_LANE_ROUTE_DATA_UP="${TWOMAN_LANE_ROUTE_DATA_UP:-/media/upload}"
+TWOMAN_LANE_ROUTE_DATA_DOWN="${TWOMAN_LANE_ROUTE_DATA_DOWN:-/media/download}"
 # Go dataplane defaults to the measured cPanel-safe profile: collapsed data
 # lanes with short bounded polls. Passenger/cPanel often buffers chunked
 # streaming responses, which delays OPEN/OPEN_OK long enough for clients to
@@ -235,6 +242,7 @@ fi
 CONFIG_JSON="$(cat <<EOF
 {
   "base_uri": "${TWOMAN_NODE_APP_URI}",
+  "upload_body_mode": "${TWOMAN_UPLOAD_BODY_MODE}",
   "client_tokens": ["${TWOMAN_CLIENT_TOKEN}"],
   "agent_tokens": ["${TWOMAN_AGENT_TOKEN}"],
   "preferred_agent_peer_label": "${TWOMAN_AGENT_PEER_ID}",
@@ -257,6 +265,8 @@ CONFIG_JSON="$(cat <<EOF
   "agent_down_combined_data_lane": ${TWOMAN_AGENT_DOWN_COMBINED_DATA_LANE},
   "helper_data_up_workers": ${TWOMAN_HELPER_DATA_UP_WORKERS},
   "agent_data_up_workers": ${TWOMAN_AGENT_DATA_UP_WORKERS},
+  "helper_data_down_parallelism": ${TWOMAN_HELPER_DATA_DOWN_PARALLELISM},
+  "agent_data_down_parallelism": ${TWOMAN_AGENT_DATA_DOWN_PARALLELISM},
   "helper_data_upload_max_batch_bytes": ${TWOMAN_HELPER_DATA_UPLOAD_MAX_BATCH_BYTES},
   "agent_data_upload_max_batch_bytes": ${TWOMAN_AGENT_DATA_UPLOAD_MAX_BATCH_BYTES},
   "helper_data_upload_flush_delay_seconds": ${TWOMAN_HELPER_DATA_UPLOAD_FLUSH_DELAY_SECONDS},
@@ -264,6 +274,18 @@ CONFIG_JSON="$(cat <<EOF
   "streaming_data_down_helper": ${TWOMAN_STREAMING_DATA_DOWN_HELPER},
   "streaming_data_down_agent": ${TWOMAN_STREAMING_DATA_DOWN_AGENT},
   "websocket_public_enabled": ${TWOMAN_WEBSOCKET_PUBLIC_ENABLED},
+  "identity_cookie_names": {
+    "role": "_cf_role",
+    "peer": "_cf_lspa",
+    "session": "_wp_syncId",
+    "auth": "_cfauth"
+  },
+  "lane_routes": {
+    "ctl/up": "${TWOMAN_LANE_ROUTE_CTL_UP}",
+    "ctl/down": "${TWOMAN_LANE_ROUTE_CTL_DOWN}",
+    "data/up": "${TWOMAN_LANE_ROUTE_DATA_UP}",
+    "data/down": "${TWOMAN_LANE_ROUTE_DATA_DOWN}"
+  },
   "lane_profiles": {
     "ctl": { "max_bytes": 4096, "max_frames": 8, "hold_ms": 1, "pad_min": 1024 },
     "pri": { "max_bytes": 32768, "max_frames": 16, "hold_ms": 2, "pad_min": 1024 },
