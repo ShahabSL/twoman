@@ -169,6 +169,7 @@ Start here:
 - [docs/EASY_DEPLOY.md](docs/EASY_DEPLOY.md): one-command Linux install, optional WARP route, `twoman` management command
 - [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md): repo-level host, hidden-server, and helper deployment
 - [docs/BACKENDS.md](docs/BACKENDS.md): backend families and when each one fits
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md): current stable managed-host profile and benchmark limits
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): runtime layout, lanes, and broker behavior
 - [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md): release validation and packaging checklist
 - [docs/releases/](docs/releases): versioned release notes

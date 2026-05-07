@@ -33,6 +33,17 @@ TWOMAN_DOWN_STREAM_MAX_SESSION_SECONDS="${TWOMAN_DOWN_STREAM_MAX_SESSION_SECONDS
 TWOMAN_DATA_UP_MAX_BATCH_BYTES="${TWOMAN_DATA_UP_MAX_BATCH_BYTES:-524288}"
 TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS="${TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS:-0.006}"
 TWOMAN_DATA_UP_WORKERS="${TWOMAN_DATA_UP_WORKERS:-8}"
+TWOMAN_ADAPTIVE_UPLOAD_ENABLED="${TWOMAN_ADAPTIVE_UPLOAD_ENABLED:-false}"
+TWOMAN_ADAPTIVE_UPLOAD_MIN_WORKERS="${TWOMAN_ADAPTIVE_UPLOAD_MIN_WORKERS:-0}"
+TWOMAN_ADAPTIVE_UPLOAD_INITIAL_WORKERS="${TWOMAN_ADAPTIVE_UPLOAD_INITIAL_WORKERS:-0}"
+TWOMAN_ADAPTIVE_UPLOAD_MAX_WORKERS="${TWOMAN_ADAPTIVE_UPLOAD_MAX_WORKERS:-0}"
+TWOMAN_ADAPTIVE_UPLOAD_MIN_BATCH_BYTES="${TWOMAN_ADAPTIVE_UPLOAD_MIN_BATCH_BYTES:-0}"
+TWOMAN_ADAPTIVE_UPLOAD_MAX_BATCH_BYTES="${TWOMAN_ADAPTIVE_UPLOAD_MAX_BATCH_BYTES:-0}"
+TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES="${TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES:-16}"
+TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS="${TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS:-1}"
+TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES="${TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES:-128}"
+TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS="${TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS:-2}"
+TWOMAN_PURGE_CONFLICTING_AGENT_UNITS="${TWOMAN_PURGE_CONFLICTING_AGENT_UNITS:-true}"
 TWOMAN_MAX_FRAME_PAYLOAD_BYTES="${TWOMAN_MAX_FRAME_PAYLOAD_BYTES:-2097152}"
 TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS="${TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS:-5}"
 TWOMAN_OPEN_CONNECT_TIMEOUT_SECONDS="${TWOMAN_OPEN_CONNECT_TIMEOUT_SECONDS:-12}"
@@ -167,6 +178,19 @@ CONFIG_JSON="$(cat <<EOF
   "up_workers": {
     "data": ${TWOMAN_DATA_UP_WORKERS}
   },
+  "adaptive_upload": {
+    "enabled": ${TWOMAN_ADAPTIVE_UPLOAD_ENABLED},
+    "lanes": ["data"],
+    "min_workers": ${TWOMAN_ADAPTIVE_UPLOAD_MIN_WORKERS},
+    "initial_workers": ${TWOMAN_ADAPTIVE_UPLOAD_INITIAL_WORKERS},
+    "max_workers": ${TWOMAN_ADAPTIVE_UPLOAD_MAX_WORKERS},
+    "min_batch_bytes": ${TWOMAN_ADAPTIVE_UPLOAD_MIN_BATCH_BYTES},
+    "max_batch_bytes": ${TWOMAN_ADAPTIVE_UPLOAD_MAX_BATCH_BYTES},
+    "increase_after_successes": ${TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES},
+    "decrease_after_errors": ${TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS},
+    "backlog_threshold_frames": ${TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES},
+    "decision_interval_seconds": ${TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS}
+  },
   "streaming_up_lanes": ${STREAMING_UP_JSON},
   "idle_repoll_delay_seconds": {
     "ctl": ${TWOMAN_IDLE_REPOLL_CTL},
@@ -245,6 +269,23 @@ echo "Compiling the hidden-agent runtime..."
 /usr/bin/python3 -m py_compile "${TWOMAN_INSTALL_ROOT}/agent_watchdog.py"
 echo "Enabling and starting Twoman systemd services..."
 systemctl daemon-reload
+if [ "${TWOMAN_PURGE_CONFLICTING_AGENT_UNITS}" = "true" ]; then
+  systemctl list-unit-files 'twoman*.service' 'twoman*.timer' --no-legend --no-pager 2>/dev/null | awk '{print $1}' | while read -r unit; do
+    [ -n "${unit}" ] || continue
+    case "${unit}" in
+      "${TWOMAN_AGENT_SERVICE_NAME}"|"${TWOMAN_WATCHDOG_SERVICE_NAME}"|"${TWOMAN_WATCHDOG_TIMER_NAME}") continue ;;
+    esac
+    content="$(systemctl cat "${unit}" 2>/dev/null || true)"
+    case "${unit} ${content}" in
+      *twoman-helper-agent*--mode\ agent*|*twoman-agent*|*twoman-nima*|*twoman-toork*|*twoman-server2*)
+        systemctl stop "${unit}" >/dev/null 2>&1 || true
+        systemctl disable "${unit}" >/dev/null 2>&1 || true
+        systemctl reset-failed "${unit}" >/dev/null 2>&1 || true
+        ;;
+    esac
+  done
+  systemctl daemon-reload
+fi
 systemctl enable --now "${TWOMAN_AGENT_SERVICE_NAME}"
 systemctl enable --now "${TWOMAN_WATCHDOG_TIMER_NAME}"
 systemctl restart "${TWOMAN_AGENT_SERVICE_NAME}"

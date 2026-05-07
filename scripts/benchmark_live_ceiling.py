@@ -38,6 +38,12 @@ def run(args: list[str], *, env: dict[str, str] | None = None, timeout: float | 
     )
 
 
+def sshpass_env(password: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env["SSHPASS"] = password
+    return env
+
+
 def parse_server_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     positional: list[str] = []
@@ -126,8 +132,7 @@ class SSH:
     def run(self, command: str, *, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
         args = [
             "sshpass",
-            "-p",
-            self.password,
+            "-e",
             "ssh",
             "-p",
             self.port,
@@ -139,7 +144,28 @@ class SSH:
         if self.known_hosts_file:
             args.extend(["-o", f"UserKnownHostsFile={self.known_hosts_file}"])
         args.extend([f"{self.user}@{self.host}", command])
-        return run(args, timeout=timeout)
+        return run(args, env=sshpass_env(self.password), timeout=timeout)
+
+
+def adaptive_upload_config(args: argparse.Namespace) -> dict[str, Any] | None:
+    if not args.adaptive_upload:
+        return None
+    config: dict[str, Any] = {"enabled": True, "lanes": ["data"]}
+    for key, value in {
+        "min_workers": args.adaptive_min_workers,
+        "initial_workers": args.adaptive_initial_workers,
+        "max_workers": args.adaptive_max_workers,
+        "min_batch_bytes": args.adaptive_min_batch_bytes,
+        "max_batch_bytes": args.adaptive_max_batch_bytes,
+        "increase_after_successes": args.adaptive_increase_after_successes,
+        "decrease_after_errors": args.adaptive_decrease_after_errors,
+        "backlog_threshold_frames": args.adaptive_backlog_threshold_frames,
+    }.items():
+        if value > 0:
+            config[key] = value
+    if args.adaptive_decision_interval_seconds >= 0:
+        config["decision_interval_seconds"] = args.adaptive_decision_interval_seconds
+    return config
 
 
 def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_config: dict[str, Any]) -> None:
@@ -156,6 +182,16 @@ def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_confi
             "TWOMAN_DATA_UP_WORKERS": "2",
             "TWOMAN_DATA_UP_MAX_BATCH_BYTES": "131072",
             "TWOMAN_DATA_UP_FLUSH_DELAY_SECONDS": "0.006",
+            "TWOMAN_ADAPTIVE_UPLOAD_ENABLED": "true" if args.adaptive_upload else "false",
+            "TWOMAN_ADAPTIVE_UPLOAD_MIN_WORKERS": str(args.adaptive_min_workers),
+            "TWOMAN_ADAPTIVE_UPLOAD_INITIAL_WORKERS": str(args.adaptive_initial_workers),
+            "TWOMAN_ADAPTIVE_UPLOAD_MAX_WORKERS": str(args.adaptive_max_workers),
+            "TWOMAN_ADAPTIVE_UPLOAD_MIN_BATCH_BYTES": str(args.adaptive_min_batch_bytes),
+            "TWOMAN_ADAPTIVE_UPLOAD_MAX_BATCH_BYTES": str(args.adaptive_max_batch_bytes),
+            "TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES": str(args.adaptive_increase_after_successes),
+            "TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS": str(args.adaptive_decrease_after_errors),
+            "TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES": str(args.adaptive_backlog_threshold_frames),
+            "TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS": str(args.adaptive_decision_interval_seconds),
             "TWOMAN_TRACE": "0",
             "TWOMAN_AUTO_WIREPROXY": "true",
         }
@@ -184,12 +220,15 @@ def set_remote_agent_variant(
     batch: int,
     flush_delay: float,
     agent_down_parallelism: int = 0,
+    adaptive_upload: dict[str, Any] | None = None,
 ) -> None:
+    adaptive_json = json.dumps(adaptive_upload or {})
     script = f"""
 set -euo pipefail
 python3 - <<'PY'
 import json
 path = {json.dumps(config_path)}
+adaptive = json.loads({json.dumps(adaptive_json)})
 with open(path, "r", encoding="utf-8") as handle:
     cfg = json.load(handle)
 cfg.setdefault("upload_profiles", {{}}).setdefault("data", {{}})
@@ -198,6 +237,10 @@ cfg["upload_profiles"]["data"]["flush_delay_seconds"] = {flush_delay}
 cfg.setdefault("up_workers", {{}})["data"] = {workers}
 if {agent_down_parallelism} > 0:
     cfg.setdefault("down_parallelism", {{}})["data"] = {agent_down_parallelism}
+if adaptive:
+    cfg["adaptive_upload"] = adaptive
+else:
+    cfg.pop("adaptive_upload", None)
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(cfg, handle, indent=2)
     handle.write("\\n")
@@ -270,8 +313,7 @@ print(json.dumps(results))
     command = "python3 -c " + shlex.quote(remote)
     ssh_args = [
         "sshpass",
-        "-p",
-        ssh.password,
+        "-e",
         "ssh",
         "-p",
         ssh.port,
@@ -284,6 +326,7 @@ print(json.dumps(results))
     proc = subprocess.run(
         ssh_args,
         input=json.dumps(payload),
+        env=sshpass_env(ssh.password),
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -323,6 +366,7 @@ def start_helper(
     helper_batch: int = 0,
     helper_down_parallelism: int = 0,
     helper_flush_delay: float = 0.006,
+    adaptive_upload: dict[str, Any] | None = None,
 ) -> tuple[subprocess.Popen[str], int, Path]:
     listen_state = tmp_dir / f"{peer}-listen.json"
     config_path = tmp_dir / f"{peer}.json"
@@ -358,6 +402,8 @@ def start_helper(
                 "flush_delay_seconds": helper_flush_delay,
             }
         }
+    if adaptive_upload:
+        config["adaptive_upload"] = adaptive_upload
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     log_path = tmp_dir / f"{peer}.log"
     log = log_path.open("w", encoding="utf-8")
@@ -488,6 +534,7 @@ def tunnel_variant(
     bytes_count: int,
     download_url: str,
     upload_url: str,
+    adaptive_upload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     peer = (
         f"bench-helper-aw{agent_workers}-ab{agent_batch}"
@@ -504,6 +551,7 @@ def tunnel_variant(
         helper_workers,
         helper_batch,
         helper_down_parallelism,
+        adaptive_upload=adaptive_upload,
     )
     try:
         upload_body = tmp_dir / f"{peer}-upload.bin"
@@ -522,6 +570,7 @@ def tunnel_variant(
             "helper_batch_bytes": helper_batch,
             "agent_down_parallelism": agent_down_parallelism,
             "helper_down_parallelism": helper_down_parallelism,
+            "adaptive_upload": adaptive_upload or {},
             "bytes": bytes_count,
             "warmup": warmup,
             "sample": download_sample,
@@ -557,6 +606,16 @@ def main() -> int:
     parser.add_argument("--helper-batch-bytes", type=int, default=0)
     parser.add_argument("--agent-down-parallelism", type=int, default=0)
     parser.add_argument("--helper-down-parallelism", type=int, default=0)
+    parser.add_argument("--adaptive-upload", action="store_true")
+    parser.add_argument("--adaptive-min-workers", type=int, default=0)
+    parser.add_argument("--adaptive-initial-workers", type=int, default=0)
+    parser.add_argument("--adaptive-max-workers", type=int, default=0)
+    parser.add_argument("--adaptive-min-batch-bytes", type=int, default=0)
+    parser.add_argument("--adaptive-max-batch-bytes", type=int, default=0)
+    parser.add_argument("--adaptive-increase-after-successes", type=int, default=16)
+    parser.add_argument("--adaptive-decrease-after-errors", type=int, default=1)
+    parser.add_argument("--adaptive-backlog-threshold-frames", type=int, default=128)
+    parser.add_argument("--adaptive-decision-interval-seconds", type=float, default=2.0)
     parser.add_argument("--raw-concurrency", default="1,2,3,4,6,8")
     parser.add_argument("--raw-upload-proxy-url", default="socks5h://127.0.0.1:1280")
     parser.add_argument("--remote-agent-config", default="/opt/twoman/config.json")
@@ -576,6 +635,7 @@ def main() -> int:
         host_config = load_host_config(args.cpanel_base_url, args.cpanel_username, args.cpanel_password, home, args.node_dir)
     client_token = host_config["client_tokens"][0]
     ssh = SSH(server)
+    adaptive_upload = adaptive_upload_config(args)
 
     if not args.skip_deploy:
         deploy_go_agent(args, server, host_config)
@@ -595,6 +655,7 @@ def main() -> int:
         "raw_upload_proxy_url": args.raw_upload_proxy_url or "direct",
         "remote_agent_config": args.remote_agent_config,
         "remote_agent_service": args.remote_agent_service,
+        "adaptive_upload": adaptive_upload or {},
         "raw_upload": [],
         "tunnel": [],
     }
@@ -700,6 +761,7 @@ def main() -> int:
                     agent_batch,
                     0.006,
                     agent_down,
+                    adaptive_upload,
                 )
                 sample = tunnel_variant(
                     binary,
@@ -716,6 +778,7 @@ def main() -> int:
                     args.tunnel_bytes,
                     download_url,
                     args.upload_url,
+                    adaptive_upload,
                 )
                 result["tunnel"].append(sample)
                 s = sample["sample"]

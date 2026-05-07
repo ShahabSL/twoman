@@ -84,6 +84,7 @@ type laneTransport struct {
 	streamControlLane    string
 	sendQueueTimeout     time.Duration
 	upWorkers            map[string]int
+	adaptiveUpload       *adaptiveUploadController
 	cipherSuite          string
 	uploadBodyMode       string
 	uploadFilename       string
@@ -478,19 +479,21 @@ func (t *laneTransport) start(ctx context.Context) error {
 		return err
 	}
 	t.applyConfigOverrides()
-	log.Printf("[transport] role=%s effective down_lanes=%v down_parallelism=%v up_workers=%v data_upload_profile=%+v",
-		t.role, sortedLaneKeys(t.downLanes), t.downParallelism, t.upWorkers, t.uploadProfiles[LaneData])
+	t.adaptiveUpload = newAdaptiveUploadController(t.cfg.AdaptiveUpload, t.upWorkers, t.uploadProfiles)
+	log.Printf("[transport] role=%s effective down_lanes=%v down_parallelism=%v up_workers=%v data_upload_profile=%+v adaptive_upload=%s",
+		t.role, sortedLaneKeys(t.downLanes), t.downParallelism, t.upWorkers, t.uploadProfiles[LaneData], t.adaptiveUpload.describe())
 	for _, lane := range t.externalLanes() {
 		lane := lane
-		upWorkers := t.upWorkers[lane]
+		upWorkers := t.uploadWorkerLimit(lane)
 		if upWorkers < 1 {
 			upWorkers = 1
 		}
 		for i := 0; i < upWorkers; i++ {
+			workerIdx := i
 			t.wg.Add(1)
 			go func() {
 				defer t.wg.Done()
-				t.upLoop(lane)
+				t.upLoop(lane, workerIdx)
 			}()
 		}
 	}
@@ -575,9 +578,12 @@ func (t *laneTransport) enqueueFrame(ch chan *Frame, f *Frame) error {
 
 // ---- UP loop ---------------------------------------------------------------
 
-func (t *laneTransport) upLoop(lane string) {
+func (t *laneTransport) upLoop(lane string, workerIdx int) {
 	for {
-		batch, _ := t.collectBatch(lane)
+		if !t.waitUploadWorkerActive(lane, workerIdx) {
+			return
+		}
+		batch, batchBytes := t.collectBatch(lane)
 		if batch == nil {
 			return // stopped
 		}
@@ -606,6 +612,7 @@ func (t *laneTransport) upLoop(lane string) {
 
 		err := t.doPost(client, reqURL, headers, requestBody, t.httpTimeout)
 		if err != nil {
+			t.markUploadError(lane)
 			t.requeue(lane, batch)
 			t.resetClient(lane, "up", 0)
 			delay := t.backoff("up", lane)
@@ -619,6 +626,7 @@ func (t *laneTransport) upLoop(lane string) {
 			}
 		} else {
 			t.markSuccess("up", lane)
+			t.markUploadSuccess(lane, batchBytes)
 		}
 	}
 }
@@ -1122,9 +1130,53 @@ func (t *laneTransport) randFloat64() float64 {
 
 func (t *laneTransport) uploadProfile(lane string) uploadProfile {
 	if p, ok := t.uploadProfiles[lane]; ok {
-		return p
+		return t.adaptiveUpload.applyProfile(lane, p)
 	}
-	return uploadProfile{maxBatchBytes: t.maxBatchBytes, flushDelay: t.flushDelay}
+	return t.adaptiveUpload.applyProfile(lane, uploadProfile{maxBatchBytes: t.maxBatchBytes, flushDelay: t.flushDelay})
+}
+
+func (t *laneTransport) uploadWorkerLimit(lane string) int {
+	workers := t.upWorkers[lane]
+	if workers < 1 {
+		workers = 1
+	}
+	return t.adaptiveUpload.maxWorkers(lane, workers)
+}
+
+func (t *laneTransport) waitUploadWorkerActive(lane string, workerIdx int) bool {
+	for {
+		if t.adaptiveUpload.workerActive(lane, workerIdx) {
+			return true
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-t.stopCh:
+			timer.Stop()
+			return false
+		}
+	}
+}
+
+func (t *laneTransport) markUploadSuccess(lane string, batchBytes int) {
+	t.adaptiveUpload.markSuccess(lane, t.uploadBacklogFrames(lane), batchBytes)
+}
+
+func (t *laneTransport) markUploadError(lane string) {
+	t.adaptiveUpload.markError(lane)
+}
+
+func (t *laneTransport) uploadBacklogFrames(lane string) int {
+	backlog := 0
+	if t.collapseDataLanes && lane == LaneData {
+		backlog += len(t.dataQueue)
+	} else if ch := t.queues[lane]; ch != nil {
+		backlog += len(ch)
+	}
+	t.replayMu.Lock()
+	backlog += len(t.replayQueues[lane])
+	t.replayMu.Unlock()
+	return backlog
 }
 
 func min2(a, b time.Duration) time.Duration {

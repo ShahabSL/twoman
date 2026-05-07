@@ -53,6 +53,7 @@ type Config struct {
 	UpWorkers        map[string]int                   `json:"up_workers"`
 	DownParallelism  map[string]int                   `json:"down_parallelism"`
 	DownLanes        []string                         `json:"down_lanes"`
+	AdaptiveUpload   AdaptiveUploadConfig             `json:"adaptive_upload"`
 
 	// Identity cookie names (optional overrides)
 	IdentityCookieNames map[string]string `json:"identity_cookie_names"`
@@ -76,6 +77,20 @@ type Config struct {
 type UploadProfileOverride struct {
 	MaxBatchBytes     int      `json:"max_batch_bytes"`
 	FlushDelaySeconds *float64 `json:"flush_delay_seconds"`
+}
+
+type AdaptiveUploadConfig struct {
+	Enabled                 bool     `json:"enabled"`
+	Lanes                   []string `json:"lanes"`
+	MinWorkers              int      `json:"min_workers"`
+	InitialWorkers          int      `json:"initial_workers"`
+	MaxWorkers              int      `json:"max_workers"`
+	MinBatchBytes           int      `json:"min_batch_bytes"`
+	MaxBatchBytes           int      `json:"max_batch_bytes"`
+	IncreaseAfterSuccesses  int      `json:"increase_after_successes"`
+	DecreaseAfterErrors     int      `json:"decrease_after_errors"`
+	BacklogThresholdFrames  int      `json:"backlog_threshold_frames"`
+	DecisionIntervalSeconds float64  `json:"decision_interval_seconds"`
 }
 
 func (c *Config) UnmarshalJSON(data []byte) error {

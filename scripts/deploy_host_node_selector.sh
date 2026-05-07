@@ -108,6 +108,7 @@ TWOMAN_CAMOUFLAGE_SITE_ENABLED="${TWOMAN_CAMOUFLAGE_SITE_ENABLED:-true}"
 TWOMAN_CAMOUFLAGE_DEPLOYMENT_ID="${TWOMAN_CAMOUFLAGE_DEPLOYMENT_ID:-}"
 TWOMAN_CAMOUFLAGE_SITE_NAME="${TWOMAN_CAMOUFLAGE_SITE_NAME:-}"
 TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX="${TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX:-true}"
+TWOMAN_CAMOUFLAGE_404_PATH="${TWOMAN_CAMOUFLAGE_404_PATH:-}"
 TWOMAN_NODE_BUNDLE_PATH="$(mktemp)"
 cleanup() {
   rm -f "${TWOMAN_NODE_BUNDLE_PATH}"
@@ -231,6 +232,7 @@ EOF
   upload_content "${TWOMAN_CPANEL_HOME}/public_html/${CAMOUFLAGE_SITE_SLUG}" "contact.html" "${CAMOUFLAGE_CONTACT}"
   upload_content "${TWOMAN_CPANEL_HOME}/public_html/${CAMOUFLAGE_SITE_SLUG}" "404.html" "${CAMOUFLAGE_404}"
   upload_content "${TWOMAN_CPANEL_HOME}/public_html/${CAMOUFLAGE_SITE_SLUG}" ".htaccess" "${CAMOUFLAGE_SLUG_HTACCESS}"
+  TWOMAN_CAMOUFLAGE_404_PATH="${TWOMAN_CPANEL_HOME}/public_html/${CAMOUFLAGE_SITE_SLUG}/404.html"
   if [ "${TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX}" = "true" ]; then
     upload_content "${TWOMAN_CPANEL_HOME}/public_html" "index.html" "${CAMOUFLAGE_INDEX}"
     upload_content "${TWOMAN_CPANEL_HOME}/public_html" "about.html" "${CAMOUFLAGE_ABOUT}"
@@ -239,6 +241,7 @@ EOF
     upload_content "${TWOMAN_CPANEL_HOME}/public_html" "robots.txt" "${CAMOUFLAGE_ROBOTS}"
     upload_content "${TWOMAN_CPANEL_HOME}/public_html" "sitemap.xml" "${CAMOUFLAGE_SITEMAP}"
     upload_content "${TWOMAN_CPANEL_HOME}/public_html" ".htaccess" "${CAMOUFLAGE_ROOT_HTACCESS}"
+    TWOMAN_CAMOUFLAGE_404_PATH="${TWOMAN_CPANEL_HOME}/public_html/404.html"
   fi
 fi
 
@@ -246,6 +249,7 @@ CONFIG_JSON="$(cat <<EOF
 {
   "base_uri": "${TWOMAN_NODE_APP_URI}",
   "upload_body_mode": "${TWOMAN_UPLOAD_BODY_MODE}",
+  "camouflage_404_path": "${TWOMAN_CAMOUFLAGE_404_PATH}",
   "client_tokens": ["${TWOMAN_CLIENT_TOKEN}"],
   "agent_tokens": ["${TWOMAN_AGENT_TOKEN}"],
   "preferred_agent_peer_label": "${TWOMAN_AGENT_PEER_ID}",

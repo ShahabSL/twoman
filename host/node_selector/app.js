@@ -5422,6 +5422,55 @@ function jsonResponse(res, statusCode, payload) {
   });
   res.end(body);
 }
+var FALLBACK_CAMOUFLAGE_404_HTML = [
+  "<!doctype html>",
+  '<html lang="en">',
+  "<head>",
+  '<meta charset="utf-8" />',
+  '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+  "<title>Page not found</title>",
+  "<style>",
+  "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8f5ee;color:#2d2a24;font-family:Georgia,serif}",
+  "main{max-width:34rem;padding:3rem;text-align:center}",
+  "h1{font-size:clamp(2rem,7vw,4rem);margin:0 0 1rem}",
+  "p{font-size:1rem;line-height:1.7;color:#5f5a51}",
+  "</style>",
+  "</head>",
+  "<body><main><h1>404</h1><p>The page you requested could not be found.</p></main></body>",
+  "</html>"
+].join("");
+var camouflageNotFoundHtml = null;
+function loadCamouflageNotFoundHtml() {
+  if (camouflageNotFoundHtml !== null) {
+    return camouflageNotFoundHtml;
+  }
+  const candidates = [
+    loadedConfig.camouflage_404_path,
+    process.env.TWOMAN_CAMOUFLAGE_404_PATH,
+    path.resolve(__dirname, "..", "public_html", "404.html")
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const resolved = path.resolve(String(candidate));
+      if (fs.existsSync(resolved)) {
+        camouflageNotFoundHtml = fs.readFileSync(resolved, "utf8");
+        return camouflageNotFoundHtml;
+      }
+    } catch (_) {
+    }
+  }
+  camouflageNotFoundHtml = FALLBACK_CAMOUFLAGE_404_HTML;
+  return camouflageNotFoundHtml;
+}
+function camouflageNotFoundResponse(res) {
+  const body = Buffer.from(loadCamouflageNotFoundHtml());
+  res.writeHead(404, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": String(body.length),
+    "Cache-Control": "no-store"
+  });
+  res.end(body);
+}
 function parseCookieHeader(value) {
   const cookies = {};
   for (const chunk of String(value || "").split(";")) {
@@ -5686,7 +5735,7 @@ var server = http.createServer(async (req, res) => {
   const healthPublic = Boolean(loadedConfig.health_public);
   if (isHealthRoute(route)) {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      jsonResponse(res, 403, { error: "forbidden" });
+      camouflageNotFoundResponse(res);
       return;
     }
     jsonResponse(res, 200, state.stats());
@@ -5694,7 +5743,7 @@ var server = http.createServer(async (req, res) => {
   }
   if (route === "/pid") {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      jsonResponse(res, 403, { error: "forbidden" });
+      camouflageNotFoundResponse(res);
       return;
     }
     jsonResponse(res, 200, { pid: process.pid });
@@ -5702,7 +5751,7 @@ var server = http.createServer(async (req, res) => {
   }
   if (route === "/connect-probe") {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      jsonResponse(res, 403, { error: "forbidden" });
+      camouflageNotFoundResponse(res);
       return;
     }
     await handleConnectProbe(req, res, url);
@@ -5710,7 +5759,7 @@ var server = http.createServer(async (req, res) => {
   }
   if (route === "/stream") {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      jsonResponse(res, 403, { error: "forbidden" });
+      camouflageNotFoundResponse(res);
       return;
     }
     handleChunkStream(res);
@@ -5718,7 +5767,7 @@ var server = http.createServer(async (req, res) => {
   }
   if (route === "/upload_probe" && req.method === "POST") {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      jsonResponse(res, 403, { error: "forbidden" });
+      camouflageNotFoundResponse(res);
       return;
     }
     await handleUploadProbe(req, res);
@@ -5730,7 +5779,7 @@ var server = http.createServer(async (req, res) => {
     const direction = parsedRoute.direction;
     const headers = connectionHeaders(req);
     if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
-      jsonResponse(res, 403, { error: "invalid role or token" });
+      camouflageNotFoundResponse(res);
       return;
     }
     if (!headers.cipherSuite) {
@@ -5819,10 +5868,10 @@ var server = http.createServer(async (req, res) => {
       res.end(encPayload);
       return;
     }
-    jsonResponse(res, 405, { error: "method not allowed" });
+    camouflageNotFoundResponse(res);
     return;
   }
-  jsonResponse(res, 404, { error: "not found", path: route });
+  camouflageNotFoundResponse(res);
 });
 var wss = new WebSocketServer({ noServer: true });
 var echoWss = new WebSocketServer({ noServer: true });
@@ -5837,7 +5886,7 @@ server.on("upgrade", (req, socket, head) => {
   }
   if (route === "/ws-echo") {
     if (!healthPublic && !isObserverAuthorized(req)) {
-      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
     }
@@ -5854,7 +5903,7 @@ server.on("upgrade", (req, socket, head) => {
   }
   const headers = connectionHeaders(req);
   if (!headers.role || !headers.peer || !headers.session || !state.auth(headers.role, headers.token)) {
-    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+    socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }

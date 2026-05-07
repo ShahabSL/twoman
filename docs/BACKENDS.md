@@ -88,8 +88,14 @@ Current status:
   `streaming_data_down_helper=false`
 - current cPanel Node deploy defaults keep `streaming_data_down_agent=false`
 - the advertised `managed_host_http` helper profile now keeps
-  `down_parallelism.data=2` so a second bounded helper poll can reopen while
+  `down_parallelism.data=4` so bounded helper polls can reopen while
   the first is draining
+- the current best stable audited profile uses helper data upload workers
+  `32`, agent data upload workers `8`, `512 KiB` data upload batches, `6 ms`
+  data flush delay, and a `4 MiB` broker bulk lane batch
+- Go helper/agent runtimes also support opt-in adaptive upload scheduling for
+  measured deployments where live host capacity changes; release defaults stay
+  fixed until benchmarks prove adaptive is better on that host/server pair
 - helper and agent probe WebSocket mode only when the host advertises it and no
   hidden-side upstream proxy such as WARP is configured
 - reason: on the audited cPanel front-end, long-lived helper data streams were
@@ -99,6 +105,9 @@ Current status:
   site slug and the root `public_html` when `TWOMAN_CAMOUFLAGE_SITE_ROOT_INDEX=true`
 - camouflage deploys should also install matching `.htaccess` `ErrorDocument`
   rules so unknown Apache-served paths use that same themed 404 page
+- unauthenticated Node broker routes, including `/health`, lane routes, probes,
+  and unknown app paths, should also return the themed HTML `404` instead of
+  broker JSON or `403`
 - if the hidden server cannot reliably reach the managed host even through a
   Cloudflare-proxied hostname, keep hidden-side WARP enabled and let the hidden
   agent use that route only for host reachability and optional outbound egress
@@ -109,6 +118,7 @@ Primary files:
 - `scripts/deploy_host_node_selector.sh`
 - `tests/run_e2e_go_node_http.sh`
 - `docs/CLPERSIST_METHOD.md`
+- `docs/PERFORMANCE.md`
 
 ### `passenger_python`
 

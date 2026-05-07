@@ -132,6 +132,74 @@ func TestConfigOverridesTransportProfileForBenchmarkTuning(t *testing.T) {
 	}
 }
 
+func TestAdaptiveUploadControllerBoundsWorkersAndBatch(t *testing.T) {
+	cfg := &Config{
+		AdaptiveUpload: AdaptiveUploadConfig{
+			Enabled:                 true,
+			Lanes:                   []string{LaneData},
+			MinWorkers:              2,
+			InitialWorkers:          4,
+			MaxWorkers:              6,
+			MinBatchBytes:           262144,
+			MaxBatchBytes:           1048576,
+			IncreaseAfterSuccesses:  2,
+			DecreaseAfterErrors:     1,
+			BacklogThresholdFrames:  1,
+			DecisionIntervalSeconds: 0,
+		},
+	}
+	cfg.SetDefaults()
+	tp := newLaneTransport(cfg, "helper", "peer", func(*Frame, string) {})
+	tp.upWorkers[LaneData] = 4
+	tp.uploadProfiles[LaneData] = uploadProfile{maxBatchBytes: 524288, flushDelay: time.Millisecond}
+	tp.adaptiveUpload = newAdaptiveUploadController(cfg.AdaptiveUpload, tp.upWorkers, tp.uploadProfiles)
+
+	if got := tp.uploadWorkerLimit(LaneData); got != 6 {
+		t.Fatalf("expected adaptive worker limit 6, got %d", got)
+	}
+	if !tp.adaptiveUpload.workerActive(LaneData, 3) {
+		t.Fatal("expected initial worker index 3 to be active")
+	}
+	if tp.adaptiveUpload.workerActive(LaneData, 4) {
+		t.Fatal("expected worker index 4 to start inactive")
+	}
+	if got := tp.uploadProfile(LaneData).maxBatchBytes; got != 524288 {
+		t.Fatalf("expected initial adaptive batch 524288, got %d", got)
+	}
+
+	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288)
+	if tp.adaptiveUpload.workerActive(LaneData, 4) {
+		t.Fatal("expected one success below threshold to keep worker index 4 inactive")
+	}
+	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288)
+	if !tp.adaptiveUpload.workerActive(LaneData, 4) {
+		t.Fatal("expected second backlogged success to activate worker index 4")
+	}
+
+	tp.adaptiveUpload.markError(LaneData)
+	if tp.adaptiveUpload.workerActive(LaneData, 4) {
+		t.Fatal("expected error to reduce active workers")
+	}
+	if got := tp.uploadProfile(LaneData).maxBatchBytes; got != 262144 {
+		t.Fatalf("expected error to reduce batch to floor, got %d", got)
+	}
+}
+
+func TestAdaptiveUploadDisabledKeepsFixedWorkersAndProfile(t *testing.T) {
+	cfg := &Config{}
+	cfg.SetDefaults()
+	tp := newLaneTransport(cfg, "helper", "peer", func(*Frame, string) {})
+	tp.upWorkers[LaneData] = 8
+	tp.uploadProfiles[LaneData] = uploadProfile{maxBatchBytes: 524288, flushDelay: time.Millisecond}
+
+	if got := tp.uploadWorkerLimit(LaneData); got != 8 {
+		t.Fatalf("expected fixed worker count 8, got %d", got)
+	}
+	if got := tp.uploadProfile(LaneData).maxBatchBytes; got != 524288 {
+		t.Fatalf("expected fixed batch 524288, got %d", got)
+	}
+}
+
 func TestSelectCipherSuitePrefersAESWhenBrokerAdvertisesIt(t *testing.T) {
 	cipher := selectCipherSuite(map[string]interface{}{
 		"cipher_suites": []interface{}{cipherSuiteHMACSHA256CTR, cipherSuiteAES256CTR},
