@@ -20,6 +20,9 @@ func TestConfigDefaultsSecurityBooleans(t *testing.T) {
 	if cfg.MaxFramePayloadBytes != defaultMaxFramePayloadBytes {
 		t.Fatalf("unexpected frame limit: %d", cfg.MaxFramePayloadBytes)
 	}
+	if cfg.TLSHandshakeTimeoutSeconds != 15 {
+		t.Fatalf("unexpected TLS handshake timeout: %v", cfg.TLSHandshakeTimeoutSeconds)
+	}
 }
 
 func TestConfigAllowsExplicitFalseSecurityBooleans(t *testing.T) {

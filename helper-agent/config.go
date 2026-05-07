@@ -27,6 +27,7 @@ type Config struct {
 	TargetAgentPeerLabel string `json:"target_agent_peer_label"`
 
 	HTTPTimeoutSeconds          float64 `json:"http_timeout_seconds"`
+	TLSHandshakeTimeoutSeconds  float64 `json:"tls_handshake_timeout_seconds"`
 	HeartbeatIntervalSeconds    float64 `json:"heartbeat_interval_seconds"`
 	DownReadTimeoutSeconds      float64 `json:"down_read_timeout_seconds"`
 	DownStreamMaxSessionSeconds float64 `json:"down_stream_max_session_seconds"`
@@ -123,6 +124,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.HTTPTimeoutSeconds == 0 {
 		c.HTTPTimeoutSeconds = 30
+	}
+	if c.TLSHandshakeTimeoutSeconds == 0 {
+		c.TLSHandshakeTimeoutSeconds = 15
 	}
 	if c.HeartbeatIntervalSeconds == 0 {
 		c.HeartbeatIntervalSeconds = 15

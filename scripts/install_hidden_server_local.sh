@@ -21,6 +21,7 @@ TWOMAN_AGENT_SERVICE_GROUP="${TWOMAN_AGENT_SERVICE_GROUP:-twoman}"
 TWOMAN_WATCHDOG_SERVICE_NAME="${TWOMAN_WATCHDOG_SERVICE_NAME:-twoman-agent-watchdog.service}"
 TWOMAN_WATCHDOG_TIMER_NAME="${TWOMAN_WATCHDOG_TIMER_NAME:-twoman-agent-watchdog.timer}"
 TWOMAN_VERIFY_TLS="${TWOMAN_VERIFY_TLS:-true}"
+TWOMAN_TLS_HANDSHAKE_TIMEOUT_SECONDS="${TWOMAN_TLS_HANDSHAKE_TIMEOUT_SECONDS:-15}"
 TWOMAN_HTTP2_CTL="${TWOMAN_HTTP2_CTL:-false}"
 TWOMAN_HTTP2_DATA="${TWOMAN_HTTP2_DATA:-false}"
 TWOMAN_TRANSPORT="${TWOMAN_TRANSPORT:-http}"
@@ -152,6 +153,7 @@ CONFIG_JSON="$(cat <<EOF
   "route_template": "${TWOMAN_ROUTE_TEMPLATE}",
   "health_template": "${TWOMAN_HEALTH_TEMPLATE}",
   "http_timeout_seconds": 30,
+  "tls_handshake_timeout_seconds": ${TWOMAN_TLS_HANDSHAKE_TIMEOUT_SECONDS},
   "heartbeat_interval_seconds": 15,
   "down_read_timeout_seconds": ${TWOMAN_DOWN_READ_TIMEOUT_SECONDS},
   "down_stream_max_session_seconds": ${TWOMAN_DOWN_STREAM_MAX_SESSION_SECONDS},

@@ -973,7 +973,7 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 		MaxIdleConns:        50,
 		MaxIdleConnsPerHost: 20,
 		IdleConnTimeout:     120 * time.Second,
-		TLSHandshakeTimeout: 15 * time.Second,
+		TLSHandshakeTimeout: t.tlsHandshakeTimeout(),
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: !t.cfg.VerifyTLS},
 		DialContext:         baseDialer.DialContext,
 		DisableKeepAlives:   false,
@@ -1024,6 +1024,17 @@ func (t *laneTransport) downResponseHeaderTimeout() time.Duration {
 	}
 	if timeout < 5*time.Second {
 		timeout = 5 * time.Second
+	}
+	return timeout
+}
+
+func (t *laneTransport) tlsHandshakeTimeout() time.Duration {
+	timeout := time.Duration(t.cfg.TLSHandshakeTimeoutSeconds * float64(time.Second))
+	if timeout <= 0 {
+		return 15 * time.Second
+	}
+	if timeout < time.Second {
+		return time.Second
 	}
 	return timeout
 }
