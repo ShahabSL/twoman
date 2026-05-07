@@ -618,10 +618,13 @@ impl DesktopRuntime {
         terminate_pid_file(&pid_path);
         let _ = fs::remove_file(&pid_path);
         let _ = fs::remove_file(&listen_state_path);
-        kill_twoman_port_owners(&[profile.http_port, profile.socks_port]);
+        kill_twoman_port_owners(&configured_profile_ports(profile).collect::<Vec<_>>());
         let port_conflicts = [("HTTP", profile.http_port), ("SOCKS", profile.socks_port)]
             .iter()
             .filter_map(|(label, port)| {
+                if *port == 0 {
+                    return None;
+                }
                 if port_bound("127.0.0.1", *port) {
                     Some(format!("{label} {port}"))
                 } else {
@@ -696,15 +699,15 @@ impl DesktopRuntime {
                 read_log_tail(&log_path, LOG_TAIL_LINES)
             ));
         };
-        if listen_state.http_port != profile.http_port
-            || listen_state.socks_port != profile.socks_port
+        if !listen_port_matches(profile.http_port, listen_state.http_port)
+            || !listen_port_matches(profile.socks_port, listen_state.socks_port)
         {
             terminate_child(&mut child);
             terminate_pid_file(&pid_path);
             return Err(format!(
                 "helper bound unexpected local ports (expected HTTP {} / SOCKS {}, got HTTP {} / SOCKS {})",
-                profile.http_port,
-                profile.socks_port,
+                listen_port_expectation(profile.http_port),
+                listen_port_expectation(profile.socks_port),
                 listen_state.http_port,
                 listen_state.socks_port
             ));
@@ -1270,6 +1273,9 @@ fn terminate_child(child: &mut Child) {
 }
 
 fn wait_for_port_state(host: &str, port: u16, expected_bound: bool, timeout: Duration) -> bool {
+    if port == 0 {
+        return !expected_bound;
+    }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let listening = listener_accepts_connections(host, port);
@@ -1363,6 +1369,9 @@ fn wait_for_log_marker(
 }
 
 fn port_bound(host: &str, port: u16) -> bool {
+    if port == 0 {
+        return false;
+    }
     let bind_host = if host == "0.0.0.0" || host == "::" {
         "127.0.0.1"
     } else {
@@ -1372,11 +1381,67 @@ fn port_bound(host: &str, port: u16) -> bool {
 }
 
 fn listener_accepts_connections(host: &str, port: u16) -> bool {
+    if port == 0 {
+        return false;
+    }
     listener_probe_hosts(host)
         .into_iter()
         .filter_map(|candidate| (candidate.as_str(), port).to_socket_addrs().ok())
         .flatten()
         .any(|address| TcpStream::connect_timeout(&address, Duration::from_millis(300)).is_ok())
+}
+
+fn configured_profile_ports(profile: &ClientProfile) -> impl Iterator<Item = u16> {
+    [profile.http_port, profile.socks_port]
+        .into_iter()
+        .filter(|port| *port > 0)
+}
+
+fn listen_port_matches(configured: u16, bound: u16) -> bool {
+    bound > 0 && (configured == 0 || configured == bound)
+}
+
+fn listen_port_expectation(configured: u16) -> String {
+    if configured == 0 {
+        "dynamic".to_string()
+    } else {
+        configured.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_profile_port_accepts_assigned_port() {
+        assert!(listen_port_matches(0, 49152));
+        assert!(!listen_port_matches(0, 0));
+    }
+
+    #[test]
+    fn fixed_profile_port_requires_exact_bound_port() {
+        assert!(listen_port_matches(11092, 11092));
+        assert!(!listen_port_matches(11092, 1080));
+    }
+
+    #[test]
+    fn port_zero_is_never_treated_as_a_real_listener() {
+        assert!(!port_bound("127.0.0.1", 0));
+        assert!(!listener_accepts_connections("127.0.0.1", 0));
+        assert!(wait_for_port_state(
+            "127.0.0.1",
+            0,
+            false,
+            Duration::from_millis(1)
+        ));
+        assert!(!wait_for_port_state(
+            "127.0.0.1",
+            0,
+            true,
+            Duration::from_millis(1)
+        ));
+    }
 }
 
 fn listener_probe_hosts(host: &str) -> Vec<String> {

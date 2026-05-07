@@ -149,8 +149,12 @@ wait_for_listen_state() {
 import json, sys
 with open(sys.argv[1], "r", encoding="utf-8") as handle:
     payload = json.load(handle)
-assert int(payload["http_port"]) > 0
-assert int(payload["socks_port"]) > 0
+http_port = int(payload["http_port"])
+socks_port = int(payload["socks_port"])
+assert http_port > 0
+assert socks_port > 0
+assert http_port != 8080, payload
+assert socks_port != 1080, payload
 PY
     then
       return 0

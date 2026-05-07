@@ -65,6 +65,8 @@ type Config struct {
 	// Internal: populated after parsing
 	http2CtlEnabled      bool
 	http2DataEnabled     bool
+	httpListenPortSet    bool
+	socksListenPortSet   bool
 	enforceConnectSNISet bool
 	verifyTLSSet         bool
 }
@@ -85,6 +87,8 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*c = Config(decoded)
+	_, c.httpListenPortSet = raw["http_listen_port"]
+	_, c.socksListenPortSet = raw["socks_listen_port"]
 	_, c.enforceConnectSNISet = raw["enforce_connect_sni"]
 	_, c.verifyTLSSet = raw["verify_tls"]
 	return nil
@@ -94,10 +98,10 @@ func (c *Config) SetDefaults() {
 	if c.ListenHost == "" {
 		c.ListenHost = "127.0.0.1"
 	}
-	if c.HTTPListenPort == 0 {
+	if !c.httpListenPortSet && c.HTTPListenPort == 0 {
 		c.HTTPListenPort = 8080
 	}
-	if c.SOCKSListenPort == 0 {
+	if !c.socksListenPortSet && c.SOCKSListenPort == 0 {
 		c.SOCKSListenPort = 1080
 	}
 	if c.HTTPTimeoutSeconds == 0 {
