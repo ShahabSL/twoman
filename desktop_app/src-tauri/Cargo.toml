@@ -1,6 +1,6 @@
 [package]
 name = "desktop_app"
-version = "1.0.2"
+version = "1.0.3"
 description = "Twoman desktop client shell"
 authors = ["Shahab Lavasani"]
 edition = "2021"
