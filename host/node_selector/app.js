@@ -3760,7 +3760,7 @@ function brokerCapabilities() {
   const agentDownCombinedDataLane = state ? state.agentDownCombinedDataLane : false;
   const websocketPublicEnabled = state ? state.websocketPublicEnabled : false;
   const maxFramePayloadBytes = state ? state.maxFramePayloadBytes : DEFAULT_MAX_FRAME_PAYLOAD_BYTES;
-  const helperDataUpWorkers = state ? state.helperDataUpWorkers : 8;
+  const helperDataUpWorkers = state ? state.helperDataUpWorkers : 32;
   const agentDataUpWorkers = state ? state.agentDataUpWorkers : 8;
   const helperDataDownParallelism = state ? state.helperDataDownParallelism : 4;
   const agentDataDownParallelism = state ? state.agentDataDownParallelism : 4;
@@ -4226,7 +4226,7 @@ var BrokerState = class {
     this.downWaitMsByRole = this.normalizeRoleDownWaitMs(config);
     this.helperDownCombinedDataLane = Boolean(config.helper_down_combined_data_lane);
     this.agentDownCombinedDataLane = Boolean(config.agent_down_combined_data_lane);
-    this.helperDataUpWorkers = coerceInt(config.helper_data_up_workers, 8);
+    this.helperDataUpWorkers = coerceInt(config.helper_data_up_workers, 32);
     this.agentDataUpWorkers = coerceInt(config.agent_data_up_workers, 8);
     this.helperDataDownParallelism = coerceInt(config.helper_data_down_parallelism, 4);
     this.agentDataDownParallelism = coerceInt(config.agent_data_down_parallelism, 4);
