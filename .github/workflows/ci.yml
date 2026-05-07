@@ -22,8 +22,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: helper-agent/go.mod
-          cache-dependency-path: helper-agent/go.mod
+          go-version: '1.22'
+          cache-dependency-path: |
+            helper-agent/go.mod
+            client-cli/go.mod
 
       - name: Install Python dependencies
         run: |

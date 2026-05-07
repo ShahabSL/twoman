@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ const (
 	profileSharePrefix = "twoman://profile?data="
 	defaultHTTPPort    = 18092
 	defaultSOCKSPort   = 11092
+	clientServiceName  = "twoman-client.service"
 )
 
 type profile struct {
@@ -60,6 +62,7 @@ type runtimeState struct {
 	ConfigPath      string `json:"configPath"`
 	ListenStatePath string `json:"listenStatePath"`
 	LogPath         string `json:"logPath"`
+	ServiceName     string `json:"serviceName,omitempty"`
 	StartedAt       string `json:"startedAt"`
 }
 
@@ -79,6 +82,8 @@ type paths struct {
 	runtimeConfig    string
 	listenStatePath  string
 	logPath          string
+	systemdUserDir   string
+	serviceUnitPath  string
 }
 
 func main() {
@@ -123,6 +128,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdProfiles(p, stdout)
 	case "connect":
 		return cmdConnect(p, remaining[1:], stdout, stderr)
+	case "service":
+		return cmdService(p, remaining[1:], stdout, stderr)
 	case "status":
 		return cmdStatus(p, remaining[1:], stdout, stderr)
 	case "logs":
@@ -145,6 +152,8 @@ func printUsage(w io.Writer) {
 Usage:
   twoman [--home DIR] import [--name NAME] [--file FILE|PROFILE_TEXT]
   twoman [--home DIR] connect [--profile NAME]
+  twoman [--home DIR] service install [--profile NAME]
+  twoman [--home DIR] service start|stop|restart|status|logs|uninstall
   twoman [--home DIR] status [--json]
   twoman [--home DIR] logs [-n LINES]
   twoman [--home DIR] disconnect
@@ -171,6 +180,10 @@ func resolvePaths(homeOverride string) (paths, error) {
 	if err != nil {
 		return paths{}, err
 	}
+	systemdDir, err := resolveSystemdUserDir()
+	if err != nil {
+		return paths{}, err
+	}
 	return paths{
 		home:             home,
 		profilesPath:     filepath.Join(home, "profiles.json"),
@@ -180,7 +193,21 @@ func resolvePaths(homeOverride string) (paths, error) {
 		runtimeConfig:    filepath.Join(home, "runtime", "helper-config.json"),
 		listenStatePath:  filepath.Join(home, "runtime", "listen-state.json"),
 		logPath:          filepath.Join(home, "logs", "helper.log"),
+		systemdUserDir:   systemdDir,
+		serviceUnitPath:  filepath.Join(systemdDir, clientServiceName),
 	}, nil
+}
+
+func resolveSystemdUserDir() (string, error) {
+	configHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+	if configHome == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configHome = filepath.Join(userHome, ".config")
+	}
+	return filepath.Abs(filepath.Join(configHome, "systemd", "user"))
 }
 
 func ensureDirs(p paths) error {
@@ -314,7 +341,7 @@ func cmdConnect(p paths, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if *foreground {
-		return runForegroundHelper(p, prof, bin, host)
+		return runForegroundHelper(p, prof, bin, host, stdout)
 	}
 	if status, ok := currentStatus(p); ok && status.Running {
 		if status.ProfileName != "" && status.ProfileName != prof.Name {
@@ -328,6 +355,239 @@ func cmdConnect(p paths, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	return startBackgroundHelper(p, prof, bin, host, stdout)
+}
+
+func cmdService(p paths, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		printServiceUsage(stdout)
+		return nil
+	}
+	switch args[0] {
+	case "install":
+		return cmdServiceInstall(p, args[1:], stdout, stderr)
+	case "uninstall", "remove":
+		return cmdServiceUninstall(p, stdout)
+	case "start", "stop", "restart":
+		if err := runSystemctlUser(stdout, stderr, args[0], clientServiceName); err != nil {
+			return err
+		}
+		if args[0] == "stop" {
+			_ = os.Remove(p.runtimeStatePath)
+			_ = os.Remove(p.listenStatePath)
+		}
+		return nil
+	case "status":
+		return runSystemctlUser(stdout, stderr, "status", "--no-pager", clientServiceName)
+	case "logs":
+		fs := flag.NewFlagSet("service logs", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		lines := fs.Int("n", 120, "number of journal lines")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		return runJournalctlUser(stdout, stderr, "-u", clientServiceName, "-n", strconv.Itoa(*lines), "--no-pager")
+	case "help", "-h", "--help":
+		printServiceUsage(stdout)
+		return nil
+	default:
+		return fmt.Errorf("unknown service command %q", args[0])
+	}
+}
+
+func printServiceUsage(w io.Writer) {
+	fmt.Fprintln(w, `Twoman client service
+
+Usage:
+  twoman service install [--profile NAME]
+  twoman service start|stop|restart|status
+  twoman service logs [-n LINES]
+  twoman service uninstall
+
+The service uses systemd --user and runs the selected profile after login.
+Run sudo loginctl enable-linger "$USER" if it must start before login.`)
+}
+
+func cmdServiceInstall(p paths, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("service install", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	profileName := fs.String("profile", "", "profile name; defaults to imported default")
+	helperBin := fs.String("helper-bin", "", "advanced: path to twoman-helper-agent binary")
+	listenHost := fs.String("listen-host", "", "override local listen host")
+	httpPort := fs.Int("http-port", -1, "override HTTP proxy port; use 0 for an ephemeral port")
+	socksPort := fs.Int("socks-port", -1, "override SOCKS5 proxy port; use 0 for an ephemeral port")
+	noEnable := fs.Bool("no-enable", false, "write the service but do not enable it")
+	noStart := fs.Bool("no-start", false, "write the service but do not start it")
+	now := fs.Bool("now", true, "enable and start immediately")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if !*now {
+		*noStart = true
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		return err
+	}
+	prof, err := store.selectProfile(*profileName)
+	if err != nil {
+		return err
+	}
+	bin, err := resolveHelperBin(*helperBin)
+	if err != nil {
+		return err
+	}
+	twomanBin, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	twomanBin, err = filepath.Abs(twomanBin)
+	if err != nil {
+		return err
+	}
+	unit, err := buildServiceUnit(p, twomanBin, serviceInstallOptions{
+		ProfileName: prof.Name,
+		HelperBin:   bin,
+		ListenHost:  strings.TrimSpace(*listenHost),
+		HTTPPort:    *httpPort,
+		SOCKSPort:   *socksPort,
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(p.systemdUserDir, 0700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(p.serviceUnitPath, []byte(unit), 0600); err != nil {
+		return err
+	}
+	if err := runSystemctlUser(stdout, stderr, "daemon-reload"); err != nil {
+		return err
+	}
+	if !*noEnable {
+		if err := runSystemctlUser(stdout, stderr, "enable", clientServiceName); err != nil {
+			return err
+		}
+	}
+	if !*noStart {
+		if err := runSystemctlUser(stdout, stderr, "restart", clientServiceName); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(stdout, "Installed %s\n", clientServiceName)
+	fmt.Fprintf(stdout, "Unit: %s\n", p.serviceUnitPath)
+	if !*noStart {
+		fmt.Fprintln(stdout, "Twoman service started.")
+	}
+	if !*noEnable {
+		fmt.Fprintln(stdout, "Twoman service enabled for this user.")
+		fmt.Fprintln(stdout, "For boot without login, run: sudo loginctl enable-linger \"$USER\"")
+	}
+	return nil
+}
+
+func cmdServiceUninstall(p paths, stdout io.Writer) error {
+	_ = runSystemctlUser(io.Discard, io.Discard, "disable", "--now", clientServiceName)
+	if err := os.Remove(p.serviceUnitPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	_ = runSystemctlUser(io.Discard, io.Discard, "daemon-reload")
+	_ = os.Remove(p.runtimeStatePath)
+	_ = os.Remove(p.listenStatePath)
+	fmt.Fprintf(stdout, "Uninstalled %s\n", clientServiceName)
+	return nil
+}
+
+type serviceInstallOptions struct {
+	ProfileName string
+	HelperBin   string
+	ListenHost  string
+	HTTPPort    int
+	SOCKSPort   int
+}
+
+func buildServiceUnit(p paths, twomanBin string, opts serviceInstallOptions) (string, error) {
+	if strings.TrimSpace(twomanBin) == "" {
+		return "", errors.New("twoman binary path is required")
+	}
+	args := []string{twomanBin, "--home", p.home, "connect", "--foreground"}
+	if strings.TrimSpace(opts.ProfileName) != "" {
+		args = append(args, "--profile", opts.ProfileName)
+	}
+	if strings.TrimSpace(opts.HelperBin) != "" {
+		args = append(args, "--helper-bin", opts.HelperBin)
+	}
+	if strings.TrimSpace(opts.ListenHost) != "" {
+		args = append(args, "--listen-host", opts.ListenHost)
+	}
+	if opts.HTTPPort >= 0 {
+		args = append(args, "--http-port", strconv.Itoa(opts.HTTPPort))
+	}
+	if opts.SOCKSPort >= 0 {
+		args = append(args, "--socks-port", strconv.Itoa(opts.SOCKSPort))
+	}
+	var b strings.Builder
+	b.WriteString("[Unit]\n")
+	b.WriteString("Description=Twoman client\n")
+	b.WriteString("After=network-online.target\n")
+	b.WriteString("Wants=network-online.target\n\n")
+	b.WriteString("[Service]\n")
+	b.WriteString("Type=simple\n")
+	b.WriteString("ExecStart=")
+	b.WriteString(systemdExecStart(args))
+	b.WriteString("\n")
+	b.WriteString("Restart=always\n")
+	b.WriteString("RestartSec=3\n")
+	b.WriteString("KillMode=control-group\n")
+	b.WriteString("StandardOutput=journal\n")
+	b.WriteString("StandardError=journal\n\n")
+	b.WriteString("[Install]\n")
+	b.WriteString("WantedBy=default.target\n")
+	return b.String(), nil
+}
+
+func systemdExecStart(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, systemdQuoteArg(arg))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func systemdQuoteArg(arg string) string {
+	if arg == "" {
+		return `""`
+	}
+	if !strings.ContainsAny(arg, " \t\n\"\\'") {
+		return arg
+	}
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\t", `\t`,
+	)
+	return `"` + replacer.Replace(arg) + `"`
+}
+
+func runSystemctlUser(stdout, stderr io.Writer, args ...string) error {
+	fullArgs := append([]string{"--user"}, args...)
+	cmd := exec.Command("systemctl", fullArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
+func runJournalctlUser(stdout, stderr io.Writer, args ...string) error {
+	fullArgs := append([]string{"--user"}, args...)
+	cmd := exec.Command("journalctl", fullArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
+func userServiceIsActive(serviceName string) bool {
+	cmd := exec.Command("systemctl", "--user", "is-active", "--quiet", serviceName)
+	return cmd.Run() == nil
 }
 
 func cmdStatus(p paths, args []string, stdout, stderr io.Writer) error {
@@ -372,6 +632,11 @@ func cmdLogs(p paths, args []string, stdout, stderr io.Writer) error {
 }
 
 func cmdStop(p paths, stdout io.Writer) error {
+	if userServiceIsActive(clientServiceName) {
+		if err := runSystemctlUser(stdout, os.Stderr, "stop", clientServiceName); err != nil {
+			return err
+		}
+	}
 	state, err := readRuntimeState(p.runtimeStatePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -574,7 +839,7 @@ func (s profileStore) selectProfile(name string) (profile, error) {
 	return profile{}, fmt.Errorf("profile %q not found", selected)
 }
 
-func runForegroundHelper(p paths, prof profile, helperBin, listenHost string) error {
+func runForegroundHelper(p paths, prof profile, helperBin, listenHost string, stdout io.Writer) error {
 	if err := writeRuntimeConfig(p, prof, listenHost); err != nil {
 		return err
 	}
@@ -584,7 +849,42 @@ func runForegroundHelper(p paths, prof profile, helperBin, listenHost string) er
 	cmd.Stdin = os.Stdin
 	cmd.Dir = p.runtimeDir
 	cmd.Env = helperEnv(prof)
-	return cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	state := runtimeState{
+		PID:             cmd.Process.Pid,
+		ProfileName:     prof.Name,
+		HelperBin:       helperBin,
+		ConfigPath:      p.runtimeConfig,
+		ListenStatePath: p.listenStatePath,
+		LogPath:         p.logPath,
+		ServiceName:     clientServiceName,
+		StartedAt:       time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := writeRuntimeState(p.runtimeStatePath, state); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return err
+	}
+	if ls, err := waitForListenState(p.listenStatePath, 20*time.Second); err == nil {
+		printConnected(stdout, state.PID, ls)
+	} else {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = cmd.Wait()
+		removeRuntimeStateForPID(p, state.PID)
+		return err
+	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+	}()
+	err := cmd.Wait()
+	removeRuntimeStateForPID(p, state.PID)
+	return err
 }
 
 func startBackgroundHelper(p paths, prof profile, helperBin, listenHost string, stdout io.Writer) error {
@@ -739,6 +1039,17 @@ func writeRuntimeState(path string, state runtimeState) error {
 	}
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0600)
+}
+
+func removeRuntimeStateForPID(p paths, pid int) {
+	state, err := readRuntimeState(p.runtimeStatePath)
+	if err != nil {
+		return
+	}
+	if state.PID == pid {
+		_ = os.Remove(p.runtimeStatePath)
+		_ = os.Remove(p.listenStatePath)
+	}
 }
 
 type statusPayload struct {

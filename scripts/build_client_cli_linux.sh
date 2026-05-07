@@ -27,10 +27,10 @@ Install:
 
 Use:
   twoman import 'twoman://profile?data=...'
-  twoman connect
+  twoman service install
   twoman status
-  twoman logs
-  twoman disconnect
+  twoman service logs
+  twoman service stop
 
 The helper sidecar is installed automatically. Do not pass --helper-bin unless
 you are developing or testing a custom helper binary.

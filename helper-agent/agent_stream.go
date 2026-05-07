@@ -135,7 +135,16 @@ func (s *AgentStream) relay() {
 		s.rt.releaseStream(s.id)
 	}()
 
-	errCh := make(chan error, 2)
+	type relaySide uint8
+	const (
+		originToHelper relaySide = iota
+		helperToOrigin
+	)
+	type relayResult struct {
+		side relaySide
+		err  error
+	}
+	errCh := make(chan relayResult, 2)
 
 	// origin → helper: read bytes from origin, send FRAME_DATA upstream.
 	go func() {
@@ -144,17 +153,17 @@ func (s *AgentStream) relay() {
 			n, err := s.conn.Read(buf)
 			if n > 0 {
 				if sendErr := s.sendData(buf[:n]); sendErr != nil {
-					errCh <- sendErr
+					errCh <- relayResult{side: originToHelper, err: sendErr}
 					return
 				}
 			}
 			if err != nil {
 				if err == io.EOF {
 					s.finish()
-					errCh <- nil
+					errCh <- relayResult{side: originToHelper}
 				} else {
 					s.reset("origin read: " + err.Error())
-					errCh <- err
+					errCh <- relayResult{side: originToHelper, err: err}
 				}
 				return
 			}
@@ -168,17 +177,17 @@ func (s *AgentStream) relay() {
 			case payload, ok := <-s.recvCh:
 				if !ok || payload == nil {
 					agentCloseWrite(s.conn)
-					errCh <- nil
+					errCh <- relayResult{side: helperToOrigin}
 					return
 				}
 				if _, err := s.conn.Write(payload); err != nil {
 					s.reset("origin write: " + err.Error())
-					errCh <- err
+					errCh <- relayResult{side: helperToOrigin, err: err}
 					return
 				}
 				s.grantWindow(len(payload))
 			case <-s.doneCh:
-				errCh <- nil
+				errCh <- relayResult{side: helperToOrigin}
 				return
 			}
 		}
@@ -186,8 +195,19 @@ func (s *AgentStream) relay() {
 
 	var firstErr error
 	for i := 0; i < 2; i++ {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
+		result := <-errCh
+		if result.err != nil && firstErr == nil {
+			firstErr = result.err
+		}
+		// If the origin read side is done, the origin socket cannot produce more
+		// useful bytes; close it now so the write goroutine cannot park forever.
+		// On write-side EOF from the helper, keep the socket half-open so origin
+		// responses can still flow back to the helper.
+		if i == 0 && (result.err != nil || result.side == originToHelper) {
+			if result.side == originToHelper {
+				s.setClosed()
+			}
+			_ = s.conn.Close()
 		}
 	}
 	if firstErr != nil && !s.isClosed() {

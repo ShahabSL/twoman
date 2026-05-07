@@ -29,7 +29,21 @@ Import a profile:
 twoman import 'twoman://profile?data=...'
 ```
 
-Connect:
+Run it as a user service:
+
+```bash
+twoman service install
+```
+
+This writes `~/.config/systemd/user/twoman-client.service`, enables it for the
+current user, and starts it immediately. If it must start after boot before the
+user logs in, enable linger once:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+For a one-shot/background session instead of a service:
 
 ```bash
 twoman connect
@@ -64,6 +78,16 @@ Stop:
 
 ```bash
 twoman disconnect
+```
+
+Service controls:
+
+```bash
+twoman service status
+twoman service logs
+twoman service restart
+twoman service stop
+twoman service uninstall
 ```
 
 ## State

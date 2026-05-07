@@ -437,7 +437,16 @@ func (s *ProxyStream) relay(
 	}
 
 	// Two goroutines: local→remote and remote→local.
-	errCh := make(chan error, 2)
+	type relaySide uint8
+	const (
+		localToRemote relaySide = iota
+		remoteToLocal
+	)
+	type relayResult struct {
+		side relaySide
+		err  error
+	}
+	errCh := make(chan relayResult, 2)
 
 	// local → remote (upload)
 	go func() {
@@ -446,17 +455,17 @@ func (s *ProxyStream) relay(
 			n, err := reader.Read(buf)
 			if n > 0 {
 				if sendErr := s.sendData(ctx, buf[:n]); sendErr != nil {
-					errCh <- sendErr
+					errCh <- relayResult{side: localToRemote, err: sendErr}
 					return
 				}
 			}
 			if err != nil {
 				if err == io.EOF {
 					s.finish()
-					errCh <- nil
+					errCh <- relayResult{side: localToRemote}
 				} else {
 					s.reset("local read error: " + err.Error())
-					errCh <- err
+					errCh <- relayResult{side: localToRemote, err: err}
 				}
 				return
 			}
@@ -471,17 +480,17 @@ func (s *ProxyStream) relay(
 				if payload == nil {
 					// EOF from remote
 					tryWriteEOF(writer)
-					errCh <- nil
+					errCh <- relayResult{side: remoteToLocal}
 					return
 				}
 				if _, err := writer.Write(payload); err != nil {
 					s.reset("local write error: " + err.Error())
-					errCh <- err
+					errCh <- relayResult{side: remoteToLocal, err: err}
 					return
 				}
 				s.grantWindow(len(payload))
 			case <-s.doneCh:
-				errCh <- nil
+				errCh <- relayResult{side: remoteToLocal}
 				return
 			}
 		}
@@ -490,8 +499,16 @@ func (s *ProxyStream) relay(
 	// Wait for both goroutines; first error wins.
 	var firstErr error
 	for i := 0; i < 2; i++ {
-		if err := <-errCh; err != nil && firstErr == nil {
-			firstErr = err
+		result := <-errCh
+		if result.err != nil && firstErr == nil {
+			firstErr = result.err
+		}
+		// On write-side errors or remote EOF, close the local endpoint now so the
+		// opposite read goroutine cannot keep the relay and stream slot alive.
+		// Local read EOF is different: keep the connection half-open for a valid
+		// response path from the remote side.
+		if i == 0 && (result.err != nil || result.side == remoteToLocal) {
+			closeRelayIO(reader, writer)
 		}
 	}
 	if firstErr != nil && !s.isClosed() {
@@ -503,5 +520,12 @@ func (s *ProxyStream) relay(
 func tryWriteEOF(w io.Writer) {
 	if cw, ok := w.(interface{ CloseWrite() error }); ok {
 		cw.CloseWrite() //nolint:errcheck
+	}
+}
+
+func closeRelayIO(reader io.Reader, writer io.WriteCloser) {
+	_ = writer.Close()
+	if closer, ok := reader.(io.Closer); ok {
+		_ = closer.Close()
 	}
 }

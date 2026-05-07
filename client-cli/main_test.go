@@ -130,8 +130,53 @@ func TestUsageShowsCleanTwomanFlow(t *testing.T) {
 	if !strings.Contains(text, "twoman [--home DIR] connect [--profile NAME]") {
 		t.Fatalf("usage does not show clean connect flow:\n%s", text)
 	}
+	if !strings.Contains(text, "twoman [--home DIR] service install [--profile NAME]") {
+		t.Fatalf("usage does not show service flow:\n%s", text)
+	}
 	if strings.Contains(text, "twoman-client") {
 		t.Fatalf("usage still exposes old binary name:\n%s", text)
+	}
+}
+
+func TestBuildServiceUnit(t *testing.T) {
+	home := t.TempDir()
+	p, err := resolvePaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit, err := buildServiceUnit(p, "/usr/local/bin/twoman", serviceInstallOptions{
+		ProfileName: "CLI E2E",
+		HelperBin:   "/usr/local/lib/twoman/twoman-helper-agent",
+		ListenHost:  "127.0.0.1",
+		HTTPPort:    18092,
+		SOCKSPort:   11092,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"[Service]",
+		"Restart=always",
+		"KillMode=control-group",
+		"WantedBy=default.target",
+		"--home " + home,
+		`--profile "CLI E2E"`,
+		"--helper-bin /usr/local/lib/twoman/twoman-helper-agent",
+		"--http-port 18092",
+		"--socks-port 11092",
+	} {
+		if !strings.Contains(unit, expected) {
+			t.Fatalf("expected %q in service unit:\n%s", expected, unit)
+		}
+	}
+}
+
+func TestSystemdQuoteArg(t *testing.T) {
+	if got := systemdQuoteArg("plain"); got != "plain" {
+		t.Fatalf("unexpected plain quote: %q", got)
+	}
+	if got := systemdQuoteArg(`name "with" spaces`); got != `"name \"with\" spaces"` {
+		t.Fatalf("unexpected escaped quote: %q", got)
 	}
 }
 

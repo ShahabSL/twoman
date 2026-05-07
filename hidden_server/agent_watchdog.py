@@ -42,8 +42,16 @@ def restart_service(service_name, reason, details):
 def main():
     parser = argparse.ArgumentParser(description="Twoman agent watchdog")
     parser.add_argument("--service", default="twoman-agent.service")
-    parser.add_argument("--fd-threshold", type=int, default=16384)
-    parser.add_argument("--close-wait-threshold", type=int, default=2048)
+    parser.add_argument(
+        "--fd-threshold",
+        type=int,
+        default=int(os.environ.get("TWOMAN_WATCHDOG_FD_THRESHOLD", "16384")),
+    )
+    parser.add_argument(
+        "--close-wait-threshold",
+        type=int,
+        default=int(os.environ.get("TWOMAN_WATCHDOG_CLOSE_WAIT_THRESHOLD", "256")),
+    )
     args = parser.parse_args()
 
     state = service_active_state(args.service)

@@ -114,13 +114,14 @@ tar -xzf twoman-cli-linux-amd64.tar.gz
 cd twoman-linux-amd64
 sudo ./install.sh
 twoman import 'twoman://profile?data=...'
-twoman connect
+twoman service install
 twoman status
-twoman disconnect
+twoman service logs
 ```
 
 The headless client installs `twoman-helper-agent` as a sidecar and discovers it
-automatically; normal users should not need helper paths or runtime flags.
+automatically; normal users should not need helper paths or runtime flags. Use
+`twoman connect` only when you want a temporary non-service session.
 
 ## Cloudflare Fronting
 
@@ -303,9 +304,9 @@ For a polished headless Linux client workflow, use the `twoman` client bundle:
 scripts/build_client_cli_linux.sh
 sudo dist/client-cli/twoman-linux-amd64/install.sh
 twoman import 'twoman://profile?data=...'
-twoman connect
+twoman service install
 twoman status
-twoman disconnect
+twoman service logs
 ```
 
 See [docs/CLIENT_CLI.md](docs/CLIENT_CLI.md).
