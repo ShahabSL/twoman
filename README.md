@@ -194,11 +194,6 @@ Start here:
 - `tests/run_e2e_go_node_http.sh`: Go helper/agent smoke test for the Node selector broker
 - `tests/run_e2e_node_http.sh`: compatibility wrapper for the Go Node smoke test
 
-Backend families:
-
-- `backends/cpanel_litespeed_bridge`
-- `backends/passenger_node`
-
 Backend overview: [docs/BACKENDS.md](docs/BACKENDS.md)
 Android client notes: [android-client/README.md](android-client/README.md)
 Desktop app notes: [desktop_app/README.md](desktop_app/README.md)

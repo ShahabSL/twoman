@@ -156,7 +156,6 @@ Primary files:
 
 - `host/passenger_python/broker_app.py`
 - `host/passenger_python/passenger_wsgi.py`
-- `backends/passenger_python/proof_app.py`
 - `scripts/deploy_host_passenger.sh`
 
 ### `passenger_node`
@@ -172,12 +171,13 @@ Why it matters:
 Current status:
 
 - generic Passenger runtime is not the preferred Node path on the audited CloudLinux host
-- proof app scaffold exists for fast validation
+- no production Passenger Node implementation is tracked; use
+  `cloudlinux_node_selector` unless a host proves that generic Passenger Node
+  and WebSocket upgrades are reliable
 
-Primary files:
+Tracked implementation files:
 
-- `backends/passenger_node/app.js`
-- `backends/passenger_node/package.json`
+- none
 
 ## Standard Maintenance Model
 
