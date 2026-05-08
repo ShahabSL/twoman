@@ -15,10 +15,10 @@ DEFAULT_WS_ROUTE_TEMPLATE = "/{lane}"
 DEFAULT_HEALTH_TEMPLATE = "/health"
 DEFAULT_AUTH_MODE = "bearer"
 DEFAULT_IDENTITY_COOKIE_NAMES = {
-    "role": "twoman_role",
-    "peer": "twoman_peer",
-    "session": "twoman_session",
-    "auth": "twoman_auth",
+    "role": "_cf_role",
+    "peer": "_cf_lspa",
+    "session": "_wp_syncId",
+    "auth": "_cfauth",
 }
 _TEMPLATE_FIELD_PATTERN = re.compile(r"{([a-zA-Z_][a-zA-Z0-9_]*)}")
 
@@ -276,11 +276,6 @@ def build_connection_headers(token, role, peer_label, peer_session_id, config):
         "%s=%s" % (name, urllib.parse.quote(value, safe="-._~"))
         for name, value in cookies.items()
     )
-    if config.get("legacy_custom_headers_enabled", False):
-        headers["X-Relay-Token"] = str(token)
-        headers["X-Twoman-Role"] = str(role)
-        headers["X-Twoman-Peer"] = str(peer_label)
-        headers["X-Twoman-Session"] = str(peer_session_id)
     return headers
 
 
@@ -294,11 +289,9 @@ def extract_connection_identity(headers, config):
         token = authorization[7:].strip()
     if not token:
         token = str(cookies.get(cookie_names["auth"], "")).strip()
-    if not token:
-        token = str(lowered.get("x-relay-token", "")).strip()
-    role = str(cookies.get(cookie_names["role"], "")).strip() or str(lowered.get("x-twoman-role", "")).strip()
-    peer = str(cookies.get(cookie_names["peer"], "")).strip() or str(lowered.get("x-twoman-peer", "")).strip()
-    session = str(cookies.get(cookie_names["session"], "")).strip() or str(lowered.get("x-twoman-session", "")).strip()
+    role = str(cookies.get(cookie_names["role"], "")).strip()
+    peer = str(cookies.get(cookie_names["peer"], "")).strip()
+    session = str(cookies.get(cookie_names["session"], "")).strip()
     return {
         "token": token,
         "role": role,

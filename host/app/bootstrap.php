@@ -162,7 +162,7 @@ function relay_auth_token()
     if ($authorization !== '' && preg_match('/^Bearer\s+(.+)$/i', $authorization, $matches)) {
         return trim((string) $matches[1]);
     }
-    return trim(relay_header('X-Relay-Token'));
+    return '';
 }
 
 function relay_auth_reverse()
@@ -599,7 +599,6 @@ function relay_build_forward_job()
         $headerName = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
         $lowerName = strtolower($headerName);
         if (in_array($lowerName, [
-            'x-relay-token',
             'x-relay-url',
             'x-relay-method',
             'host',

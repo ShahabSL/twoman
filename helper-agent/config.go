@@ -80,8 +80,7 @@ type Config struct {
 	// Leave empty to rotate through a built-in pool each session.
 	UserAgent string `json:"user_agent"`
 
-	LegacyCustomHeadersEnabled bool `json:"legacy_custom_headers_enabled"`
-	VerifyTLS                  bool `json:"verify_tls"`
+	VerifyTLS bool `json:"verify_tls"`
 
 	// Internal: populated after parsing
 	http2CtlEnabled      bool

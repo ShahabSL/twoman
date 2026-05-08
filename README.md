@@ -190,9 +190,7 @@ Start here:
 - `host/runtime/http_broker_daemon.py`: asyncio broker for bridge-style cPanel deployments
 - `host/app/bridge_runtime.php`: PHP bootstrap that starts and supervises the bridge broker
 - `host/public/api.php`: public health/bootstrap endpoint for bridge-style deployments
-- `tests/run_e2e.sh`: compatibility wrapper for the Go Node smoke test
 - `tests/run_e2e_go_node_http.sh`: Go helper/agent smoke test for the Node selector broker
-- `tests/run_e2e_node_http.sh`: compatibility wrapper for the Go Node smoke test
 
 Backend overview: [docs/BACKENDS.md](docs/BACKENDS.md)
 Android client notes: [android-client/README.md](android-client/README.md)
@@ -234,7 +232,6 @@ Today:
 - the default dataplane is the Go helper/agent on every client and hidden server
 - the current best managed-host public backend is the CloudLinux Node selector path
 - the cPanel LiteSpeed bridge backend remains available for hosts that cannot run Node
-- the generic Passenger Node backend remains a proof track for hosts where it genuinely works
 
 This is intentional. Different host classes expose different runtime models,
 and Twoman does not force them into one fragile host implementation.
@@ -247,7 +244,7 @@ Twoman still ships with repo-level scripts for each side:
 - `scripts/deploy_hidden_server.sh`: builds/uploads the Go hidden agent, writes `config.json`, installs `systemd` units, enables the watchdog, and restarts the agent
 - `scripts/build_client_cli_linux.sh`: builds the supported Linux `twoman` client bundle
 
-Manual fallback:
+Manual deployment details:
 - [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md)
 
 ### 1. Deploy the cPanel host

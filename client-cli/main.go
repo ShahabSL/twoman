@@ -1268,7 +1268,6 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 		"client_token":                  prof.ClientToken,
 		"target_agent_peer_label":       prof.TargetAgentPeerLabel,
 		"auth_mode":                     "bearer",
-		"legacy_custom_headers_enabled": false,
 		"binary_media_type":             "image/webp",
 		"route_template":                "/{lane}/{direction}",
 		"health_template":               "/health",

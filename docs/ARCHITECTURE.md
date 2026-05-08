@@ -68,9 +68,8 @@ Current selection rules:
 
 Each public request now prefers:
 - `Authorization: Bearer <token>`
-- `Cookie: twoman_role=...; twoman_peer=...; twoman_session=...`
+- `Cookie: _cf_role=...; _cf_lspa=...; _wp_syncId=...`
 
-Legacy `X-Relay-Token` and `X-Twoman-*` headers are deprecated compatibility fallbacks.
 The token remains the shared bearer credential. Peer and session cookies provide routing identity, not the secret.
 
 ## Why The Host Broker Exists

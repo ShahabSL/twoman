@@ -322,7 +322,7 @@ func renderTemplate(tmpl string, ctx map[string]string) string {
 
 // --- Connection headers (mirrors twoman_http.build_connection_headers) ---
 
-// Default identity cookie names, matching Python DEFAULT_IDENTITY_COOKIE_NAMES
+// Default identity cookie names are intentionally site-like for camouflage.
 var defaultCookieNames = map[string]string{
 	"role":    "_cf_role",
 	"peer":    "_cf_lspa",
@@ -387,11 +387,5 @@ func buildConnectionHeaders(token, role, peerLabel, peerSessionID, userAgent str
 	}
 	headers["Cookie"] = strings.Join(parts, "; ")
 
-	if cfg.LegacyCustomHeadersEnabled {
-		headers["X-Relay-Token"] = token
-		headers["X-Twoman-Role"] = role
-		headers["X-Twoman-Peer"] = peerLabel
-		headers["X-Twoman-Session"] = peerSessionID
-	}
 	return headers
 }

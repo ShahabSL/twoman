@@ -2031,16 +2031,16 @@ function connectionHeaders(req) {
     token = authorization.slice(7).trim();
   }
   if (!token) {
-    token = String(cookies._cfauth || cookies.twoman_auth || req.headers["x-relay-token"] || "");
+    token = String(cookies._cfauth || "");
   }
   return {
     token,
-	    cipherSuite: cipherSuite ? (SUPPORTED_CIPHER_SUITES.has(cipherSuite) ? cipherSuite : "") : CIPHER_SUITE_HMAC_SHA256_CTR,
-	    role: String(cookies._cf_role || cookies.twoman_role || req.headers["x-cf-role"] || req.headers["x-twoman-role"] || ""),
-	    peer: String(cookies._cf_lspa || cookies.twoman_peer || req.headers["x-cf-lspa"] || req.headers["x-twoman-peer"] || ""),
-	    session: String(cookies._wp_syncId || cookies.twoman_session || req.headers["x-wp-syncid"] || req.headers["x-twoman-session"] || ""),
-	    targetAgentPeerLabel: normalizePeerLabel(cookies.twoman_target_agent || req.headers["x-twoman-target-agent"] || "")
-	  };
+    cipherSuite: cipherSuite ? (SUPPORTED_CIPHER_SUITES.has(cipherSuite) ? cipherSuite : "") : CIPHER_SUITE_HMAC_SHA256_CTR,
+    role: String(cookies._cf_role || ""),
+    peer: String(cookies._cf_lspa || ""),
+    session: String(cookies._wp_syncId || ""),
+    targetAgentPeerLabel: normalizePeerLabel(cookies.twoman_target_agent || "")
+  };
 }
 
 function tokenForAuthenticatedHeaders(headers) {

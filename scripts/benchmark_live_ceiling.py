@@ -377,7 +377,6 @@ def start_helper(
         "client_token": client_token,
         "target_agent_peer_label": target_agent_peer_label,
         "auth_mode": "bearer",
-        "legacy_custom_headers_enabled": False,
         "binary_media_type": "image/webp",
         "route_template": "/{lane}/{direction}",
         "health_template": "/health",

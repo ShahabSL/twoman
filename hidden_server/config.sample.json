@@ -5,7 +5,6 @@
   "outbound_proxy_label": "",
   "agent_token": "replace-with-agent-token",
   "auth_mode": "bearer",
-  "legacy_custom_headers_enabled": false,
   "binary_media_type": "image/webp",
   "route_template": "/{lane}/{direction}",
   "health_template": "/health",

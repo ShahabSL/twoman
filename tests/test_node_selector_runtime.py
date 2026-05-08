@@ -365,7 +365,6 @@ class _NodeBrokerFixture:
     def request(self, method, path, token, role, body, peer=None, session=None, extra_headers=None):
         config = {
             "auth_mode": "bearer",
-            "legacy_custom_headers_enabled": False,
             "binary_media_type": self.config.get("binary_media_type", "image/webp"),
         }
         headers = build_connection_headers(

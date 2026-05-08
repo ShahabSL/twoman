@@ -1056,10 +1056,6 @@ def parse_request(environ):
         "authorization": environ.get("HTTP_AUTHORIZATION", ""),
         "cookie": environ.get("HTTP_COOKIE", ""),
         "content-type": environ.get("CONTENT_TYPE", ""),
-        "x-relay-token": environ.get("HTTP_X_RELAY_TOKEN", ""),
-        "x-twoman-role": environ.get("HTTP_X_TWOMAN_ROLE", ""),
-        "x-twoman-peer": environ.get("HTTP_X_TWOMAN_PEER", ""),
-        "x-twoman-session": environ.get("HTTP_X_TWOMAN_SESSION", ""),
     }
     body = b""
     if method == "POST":
