@@ -72,6 +72,7 @@ class TunnelVpnService : VpnService() {
             thread(name = "vpn-runtime-start", start = true) {
                 runCatching { startTunnel(profile) }
                     .onFailure { error ->
+                        Log.e(loggerTag, "TunnelVpnService start failed", error)
                         val listenState = currentListenState(profile)
                         stateStore.write(
                             RuntimeStatus(
@@ -95,7 +96,13 @@ class TunnelVpnService : VpnService() {
     }
 
     private fun startTunnel(profile: ClientProfile) {
-        ProxyService.start(this, profile, ProxyService.MODE_VPN)
+        // Capture the physical network before establishing the VPN. The Go helper
+        // binds broker sockets to this handle so control traffic cannot loop into
+        // the TUN interface on newer Android releases.
+        val underlyingNetworks = currentUnderlyingNetworks()
+        val androidNetworkHandle = androidNetworkHandle(underlyingNetworks?.firstOrNull())
+        Log.i(loggerTag, "TunnelVpnService underlyingNetworkHandle=$androidNetworkHandle")
+        ProxyService.start(this, profile, ProxyService.MODE_VPN, androidNetworkHandle)
         val listenState = waitForListenState(profile)
         if (stopRequested) {
             stopTunnel("start cancelled")
@@ -149,14 +156,16 @@ class TunnelVpnService : VpnService() {
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && androidNetworkHandle == 0L) {
+            // Fallback for unexpected no-handle devices; normal Android 6+ flow
+            // uses explicit socket binding in the helper instead.
             runCatching { builder.addDisallowedApplication(packageName) }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            currentUnderlyingNetworks()?.let { networks ->
+            underlyingNetworks?.let { networks ->
                 builder.setUnderlyingNetworks(networks)
             }
         }
@@ -280,9 +289,20 @@ class TunnelVpnService : VpnService() {
     private fun currentUnderlyingNetworks(): Array<Network>? {
         val connectivityManager =
             getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val activeNetwork = connectivityManager?.activeNetwork ?: return null
+        val activeNetwork = runCatching {
+            connectivityManager?.activeNetwork
+        }.onFailure { error ->
+            Log.w(loggerTag, "unable to read active network; VPN will use app-disallow fallback", error)
+        }.getOrNull() ?: return null
         return arrayOf(activeNetwork)
     }
+
+    private fun androidNetworkHandle(network: Network?): Long =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && network != null) {
+            network.networkHandle
+        } else {
+            0L
+        }
 
     override fun onDestroy() {
         Log.i(loggerTag, "TunnelVpnService onDestroy")

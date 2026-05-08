@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -28,6 +29,9 @@ type Config struct {
 	TargetAgentPeerLabel string `json:"target_agent_peer_label"`
 	LogPath              string `json:"log_path"`
 	EventLogPath         string `json:"event_log_path"`
+	// AndroidNetworkHandle is supplied by the Android VPN client so helper
+	// control-plane sockets stay on the physical network instead of the VPN.
+	AndroidNetworkHandle uint64 `json:"-"`
 
 	HTTPTimeoutSeconds          float64 `json:"http_timeout_seconds"`
 	TLSHandshakeTimeoutSeconds  float64 `json:"tls_handshake_timeout_seconds"`
@@ -122,7 +126,37 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	_, c.socksListenPortSet = raw["socks_listen_port"]
 	_, c.enforceConnectSNISet = raw["enforce_connect_sni"]
 	_, c.verifyTLSSet = raw["verify_tls"]
+	if value, ok := raw["android_network_handle"]; ok {
+		handle, err := parseAndroidNetworkHandle(value)
+		if err != nil {
+			return err
+		}
+		c.AndroidNetworkHandle = handle
+	}
 	return nil
+}
+
+func parseAndroidNetworkHandle(value json.RawMessage) (uint64, error) {
+	var unsigned uint64
+	if err := json.Unmarshal(value, &unsigned); err == nil {
+		return unsigned, nil
+	}
+	var signed int64
+	if err := json.Unmarshal(value, &signed); err == nil {
+		return uint64(signed), nil
+	}
+	var text string
+	if err := json.Unmarshal(value, &text); err != nil {
+		return 0, err
+	}
+	if parsed, err := strconv.ParseUint(text, 10, 64); err == nil {
+		return parsed, nil
+	}
+	parsed, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(parsed), nil
 }
 
 func (c *Config) SetDefaults() {

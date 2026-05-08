@@ -30,6 +30,9 @@ func main() {
 	if err := setupLogging(cfg.LogPath); err != nil {
 		log.Fatalf("logging: %v", err)
 	}
+	if err := configureAndroidNetwork(cfg.AndroidNetworkHandle); err != nil {
+		log.Fatalf("android network bind: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -47,6 +50,9 @@ func main() {
 
 func setupLogging(logPath string) error {
 	if logPath == "" {
+		return nil
+	}
+	if os.Getenv("TWOMAN_STDERR_ALREADY_LOGGED") == "1" {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
@@ -81,8 +87,8 @@ func runHelper(ctx context.Context, cfg *Config, sigCh <-chan os.Signal) {
 		log.Fatalf("socks listen %s: %v", socksAddr, err)
 	}
 
-	log.Printf("HTTP  proxy  → %s", httpAddr)
-	log.Printf("SOCKS5 proxy → %s", socksAddr)
+	log.Printf("HTTP  proxy  → %s", httpLn.Addr().String())
+	log.Printf("SOCKS5 proxy → %s", socksLn.Addr().String())
 	if err := writeListenState(cfg, httpLn, socksLn); err != nil {
 		log.Fatalf("write listen state: %v", err)
 	}

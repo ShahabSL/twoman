@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -968,6 +969,7 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 	baseDialer := &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
+		Control:   t.androidSocketControl(),
 	}
 	tr := &http.Transport{
 		MaxIdleConns:        50,
@@ -1015,6 +1017,21 @@ func (t *laneTransport) buildHTTPClient(lane, direction string) *http.Client {
 		timeout = t.httpTimeout
 	}
 	return &http.Client{Transport: tr, Timeout: timeout}
+}
+
+func (t *laneTransport) androidSocketControl() func(network, address string, conn syscall.RawConn) error {
+	if t.cfg.AndroidNetworkHandle == 0 {
+		return nil
+	}
+	return func(network, address string, conn syscall.RawConn) error {
+		var bindErr error
+		if err := conn.Control(func(fd uintptr) {
+			bindErr = bindAndroidSocket(t.cfg.AndroidNetworkHandle, fd)
+		}); err != nil {
+			return err
+		}
+		return bindErr
+	}
 }
 
 func (t *laneTransport) downResponseHeaderTimeout() time.Duration {

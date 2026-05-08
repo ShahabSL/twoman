@@ -45,6 +45,7 @@ class ProxyService : Service() {
         }
         val profileJson = intent?.getStringExtra(EXTRA_PROFILE_JSON) ?: return START_NOT_STICKY
         val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_PROXY
+        val androidNetworkHandle = intent.getLongExtra(EXTRA_ANDROID_NETWORK_HANDLE, 0L)
         val profile = ClientProfile.fromJson(JSONObject(profileJson))
         Log.i(loggerTag, "ProxyService onStartCommand mode=$mode profile=${profile.name}")
         currentMode = mode
@@ -67,7 +68,7 @@ class ProxyService : Service() {
         }
         if (helperThread == null) {
             helperThread = thread(name = "local-runtime-helper", start = true) {
-                runHelper(profile, mode)
+                runHelper(profile, mode, androidNetworkHandle)
             }
             listenWatcherThread = thread(name = "local-runtime-listen-watch", start = true) {
                 waitForListenState(profile, mode)
@@ -76,7 +77,7 @@ class ProxyService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun runHelper(profile: ClientProfile, mode: String) {
+    private fun runHelper(profile: ClientProfile, mode: String, androidNetworkHandle: Long) {
         val configFile = AppFiles.runtimeConfigFile(this, profile.id)
         val logFile = AppFiles.runtimeLogFile(this, profile.id)
         val listenStateFile = AppFiles.runtimeListenStateFile(this, profile.id)
@@ -87,6 +88,9 @@ class ProxyService : Service() {
                 put("vpn_dns_query_timeout_seconds", 15.0)
                 put("vpn_dns_cache_ttl_seconds", 30.0)
                 put("vpn_dns_max_inflight", 32)
+                if (androidNetworkHandle != 0L) {
+                    put("android_network_handle", java.lang.Long.toUnsignedString(androidNetworkHandle))
+                }
             }
         }
         configFile.writeText(runtimeConfig.toString(2), Charsets.UTF_8)
@@ -108,7 +112,7 @@ class ProxyService : Service() {
             if (!helperBinary.canExecute()) {
                 helperBinary.setExecutable(true, false)
             }
-            val process = ProcessBuilder(
+            val processBuilder = ProcessBuilder(
                 helperBinary.absolutePath,
                 "--config",
                 configFile.absolutePath,
@@ -117,6 +121,8 @@ class ProxyService : Service() {
             )
                 .redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+            processBuilder.environment()["TWOMAN_STDERR_ALREADY_LOGGED"] = "1"
+            val process = processBuilder
                 .start()
             helperProcess = process
             val exitCode = process.waitFor()
@@ -273,15 +279,17 @@ class ProxyService : Service() {
         private const val ACTION_STOP = "com.twoman.android.action.PROXY_STOP"
         const val EXTRA_PROFILE_JSON = "profile_json"
         const val EXTRA_MODE = "mode"
+        const val EXTRA_ANDROID_NETWORK_HANDLE = "android_network_handle"
         const val MODE_PROXY = "proxy"
         const val MODE_VPN = "vpn"
 
-        fun start(context: Context, profile: ClientProfile, mode: String) {
+        fun start(context: Context, profile: ClientProfile, mode: String, androidNetworkHandle: Long = 0L) {
             context.startForegroundService(
                 Intent(context, ProxyService::class.java).apply {
                     action = ACTION_START
                     putExtra(EXTRA_PROFILE_JSON, profile.toJson().toString())
                     putExtra(EXTRA_MODE, mode)
+                    putExtra(EXTRA_ANDROID_NETWORK_HANDLE, androidNetworkHandle)
                 },
             )
         }

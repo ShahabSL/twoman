@@ -63,6 +63,29 @@ func TestConfigPreservesExplicitDynamicListenPorts(t *testing.T) {
 	}
 }
 
+func TestConfigParsesAndroidNetworkHandle(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want uint64
+	}{
+		{name: "number", json: `{"android_network_handle": 548866543629}`, want: 548866543629},
+		{name: "unsigned string", json: `{"android_network_handle": "18446744073709551615"}`, want: ^uint64(0)},
+		{name: "signed string", json: `{"android_network_handle": "-1"}`, want: ^uint64(0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var cfg Config
+			if err := json.Unmarshal([]byte(test.json), &cfg); err != nil {
+				t.Fatal(err)
+			}
+			if cfg.AndroidNetworkHandle != test.want {
+				t.Fatalf("AndroidNetworkHandle = %d, want %d", cfg.AndroidNetworkHandle, test.want)
+			}
+		})
+	}
+}
+
 func TestConfigDefaultsMissingListenPorts(t *testing.T) {
 	var cfg Config
 	if err := json.Unmarshal([]byte(`{}`), &cfg); err != nil {
