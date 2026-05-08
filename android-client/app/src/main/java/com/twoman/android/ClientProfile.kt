@@ -156,8 +156,12 @@ data class ClientProfile(
             put("http2Ctl", http2Ctl)
             put("http2Data", http2Data)
             put("shareLanSocks", shareLanSocks)
-            put("httpPort", httpPort)
-            put("socksPort", socksPort)
+            if (httpPort > 0) {
+                put("httpPort", httpPort)
+            }
+            if (socksPort > 0) {
+                put("socksPort", socksPort)
+            }
             put("httpTimeoutSeconds", httpTimeoutSeconds)
             put("tlsHandshakeTimeoutSeconds", tlsHandshakeTimeoutSeconds)
             if (maxBatchBytes > 0) put("maxBatchBytes", maxBatchBytes)

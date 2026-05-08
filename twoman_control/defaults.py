@@ -97,14 +97,16 @@ def build_profile_share_text(
         "http2Ctl": http2_ctl,
         "http2Data": http2_data,
         "shareLanSocks": False,
-        "httpPort": http_port,
-        "socksPort": socks_port,
         "httpTimeoutSeconds": 30,
         "vpnDnsServers": ["1.1.1.1", "8.8.8.8"],
         "idleRepollCtlSeconds": 0.05,
         "idleRepollDataSeconds": 0.1,
         "traceEnabled": False,
     }
+    if http_port > 0:
+        payload["httpPort"] = http_port
+    if socks_port > 0:
+        payload["socksPort"] = socks_port
     encoded = base64.urlsafe_b64encode(
         json.dumps(payload, separators=(",", ":")).encode("utf-8")
     ).decode("ascii").rstrip("=")

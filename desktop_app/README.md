@@ -43,6 +43,9 @@ npm run tauri dev
 ```
 
 The app starts with no profiles. Add one profile in the UI or import share text.
+Imported share text defaults to stable local ports on desktop. Use `0` in the
+profile editor only when you intentionally want ephemeral ports that can change
+after the helper restarts.
 
 ## Windows Config Fields
 

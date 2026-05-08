@@ -662,6 +662,22 @@ impl DesktopRuntime {
                     "ctl": profile.http2_ctl,
                     "data": profile.http2_data,
                 },
+                "up_workers": {
+                    "data": 16,
+                },
+                "adaptive_upload": {
+                    "enabled": true,
+                    "lanes": ["data"],
+                    "min_workers": 2,
+                    "initial_workers": 6,
+                    "max_workers": 16,
+                    "min_batch_bytes": 65536,
+                    "max_batch_bytes": 524288,
+                    "increase_after_successes": 2,
+                    "decrease_after_errors": 1,
+                    "backlog_threshold_frames": 32,
+                    "decision_interval_seconds": 0.25,
+                },
                 "trace_enabled": profile.trace_enabled,
         });
         if let Some(config) = runtime_config.as_object_mut() {
@@ -1254,6 +1270,9 @@ fn spawn_runtime_command(program: ProgramSpec, log_path: &Path) -> Result<Child,
     if let Some(working_dir) = &program.working_dir {
         command.current_dir(working_dir);
     }
+    // The desktop host already redirects stdout/stderr into this log file.
+    // Tell Go sidecars not to tee stderr back into the same file a second time.
+    command.env("TWOMAN_STDERR_ALREADY_LOGGED", "1");
     command.stdin(Stdio::null());
     command.stdout(Stdio::from(stdout));
     command.stderr(Stdio::from(stderr));

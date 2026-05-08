@@ -58,6 +58,20 @@ HTTP:   127.0.0.1:18092
 PID:    12345
 ```
 
+Imported profiles use stable local ports by default (`SOCKS5 11092`,
+`HTTP 18092`). That is intentional for headless Linux services: browsers,
+system proxy settings, and monitoring should not lose the local endpoint after a
+service restart. Ephemeral ports are still available for advanced one-shot
+tests:
+
+```bash
+twoman connect --http-port 0 --socks-port 0
+```
+
+Do not install a long-running service with `--http-port 0` or `--socks-port 0`
+unless you explicitly want the local proxy ports to change after every helper
+restart.
+
 Check status:
 
 ```bash

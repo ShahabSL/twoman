@@ -67,6 +67,9 @@ Profiles can also be shared as text:
 - `Share` opens the Android share sheet with an encoded profile string
 - `Add` includes an `Import text` field and `Import` action
 - import accepts either the full shared `twoman://profile?...` text or the encoded payload by itself
+- Android omits dynamic local ports from exported share text. Desktop and Linux
+  imports choose their own stable local defaults instead of inheriting mobile
+  ephemeral ports.
 
 ## Build
 

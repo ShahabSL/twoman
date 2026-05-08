@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -60,6 +63,45 @@ func TestConfigPreservesExplicitDynamicListenPorts(t *testing.T) {
 	}
 	if cfg.SOCKSListenPort != 0 {
 		t.Fatalf("explicit dynamic SOCKS port was not preserved: %d", cfg.SOCKSListenPort)
+	}
+}
+
+func TestWriteListenStateUsesAssignedDynamicPorts(t *testing.T) {
+	httpLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpLn.Close()
+
+	socksLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer socksLn.Close()
+
+	statePath := filepath.Join(t.TempDir(), "listen-state.json")
+	cfg := &Config{
+		ListenHost:      "127.0.0.1",
+		HTTPListenPort:  0,
+		SOCKSListenPort: 0,
+		ListenStatePath: statePath,
+	}
+	if err := writeListenState(cfg, httpLn, socksLn); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		HTTPPort  int `json:"http_port"`
+		SOCKSPort int `json:"socks_port"`
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.HTTPPort == 0 || state.SOCKSPort == 0 {
+		t.Fatalf("listen state used configured zero ports instead of assigned ports: %+v", state)
 	}
 }
 

@@ -58,6 +58,23 @@ func TestParseProfileShareText(t *testing.T) {
 	}
 }
 
+func TestImportedZeroPortsUseStableDefaults(t *testing.T) {
+	raw := shareText(t, map[string]interface{}{
+		"name":          "Stable local ports",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "client-token",
+		"httpPort":      0,
+		"socksPort":     0,
+	})
+	prof, err := parseProfileShare(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prof.HTTPPort != defaultHTTPPort || prof.SOCKSPort != defaultSOCKSPort {
+		t.Fatalf("imported zero ports should migrate to stable defaults, got HTTP %d SOCKS %d", prof.HTTPPort, prof.SOCKSPort)
+	}
+}
+
 func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	home := t.TempDir()
 	raw := shareText(t, map[string]interface{}{
@@ -91,6 +108,9 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(configData), `"target_agent_peer_label"`) {
 		t.Fatal("runtime config did not include target agent field")
+	}
+	if !strings.Contains(string(configData), `"adaptive_upload"`) {
+		t.Fatal("runtime config did not include adaptive upload defaults")
 	}
 	if strings.Contains(string(configData), `"upload_profiles"`) {
 		t.Fatal("auto profile unexpectedly wrote upload profile overrides")

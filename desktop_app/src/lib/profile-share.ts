@@ -1,6 +1,8 @@
 import type { ClientProfile } from "@/lib/types";
 
 const PROFILE_SHARE_PREFIX = "twoman://profile?data=";
+const DEFAULT_HTTP_PORT = 28167;
+const DEFAULT_SOCKS_PORT = 21167;
 
 function encodeBase64Url(input: string) {
   const bytes = new TextEncoder().encode(input);
@@ -27,13 +29,13 @@ export function exportProfileShare(profile: ClientProfile) {
     verifyTls: profile.verifyTls,
     http2Ctl: profile.http2Ctl,
     http2Data: profile.http2Data,
-    httpPort: profile.httpPort,
-    socksPort: profile.socksPort,
     httpTimeoutSeconds: profile.httpTimeoutSeconds,
     idleRepollCtlSeconds: profile.idleRepollCtlSeconds,
     idleRepollDataSeconds: profile.idleRepollDataSeconds,
     traceEnabled: profile.traceEnabled,
   };
+  if (profile.httpPort > 0) payload.httpPort = profile.httpPort;
+  if (profile.socksPort > 0) payload.socksPort = profile.socksPort;
   if (profile.maxBatchBytes > 0) payload.maxBatchBytes = profile.maxBatchBytes;
   if (profile.dataUploadMaxBatchBytes > 0) payload.dataUploadMaxBatchBytes = profile.dataUploadMaxBatchBytes;
   if (profile.dataUploadFlushDelaySeconds > 0) {
@@ -59,8 +61,8 @@ export function importProfileShare(rawText: string): ClientProfile {
     verifyTls: payload.verifyTls ?? false,
     http2Ctl: payload.http2Ctl ?? true,
     http2Data: payload.http2Data ?? false,
-    httpPort: payload.httpPort ?? 28167,
-    socksPort: payload.socksPort ?? 21167,
+    httpPort: stableImportedPort(payload.httpPort, DEFAULT_HTTP_PORT),
+    socksPort: stableImportedPort(payload.socksPort, DEFAULT_SOCKS_PORT),
     httpTimeoutSeconds: payload.httpTimeoutSeconds ?? 30,
     flushDelaySeconds: payload.flushDelaySeconds ?? 0.01,
     maxBatchBytes: legacyAutoBatch(payload.maxBatchBytes ?? 0),
@@ -74,4 +76,8 @@ export function importProfileShare(rawText: string): ClientProfile {
 
 function legacyAutoBatch(value: number) {
   return value === 65536 ? 0 : value;
+}
+
+function stableImportedPort(value: number | undefined, fallback: number) {
+  return value && value > 0 ? value : fallback;
 }

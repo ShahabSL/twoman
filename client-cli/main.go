@@ -751,8 +751,8 @@ func profileFromMap(payload map[string]interface{}) profile {
 		HTTP2Ctl:                    boolField(payload, true, "http2Ctl", "http2_ctl"),
 		HTTP2Data:                   boolField(payload, false, "http2Data", "http2_data"),
 		ShareLANSocks:               boolField(payload, false, "shareLanSocks", "share_lan_socks"),
-		HTTPPort:                    intField(payload, defaultHTTPPort, "httpPort", "http_port"),
-		SOCKSPort:                   intField(payload, defaultSOCKSPort, "socksPort", "socks_port"),
+		HTTPPort:                    stableLocalPortField(payload, defaultHTTPPort, "httpPort", "http_port"),
+		SOCKSPort:                   stableLocalPortField(payload, defaultSOCKSPort, "socksPort", "socks_port"),
 		HTTPTimeoutSeconds:          intField(payload, 30, "httpTimeoutSeconds", "http_timeout_seconds"),
 		FlushDelaySeconds:           floatField(payload, 0.01, "flushDelaySeconds", "flush_delay_seconds"),
 		MaxBatchBytes:               legacyAutoBatch(intField(payload, 0, "maxBatchBytes", "max_batch_bytes")),
@@ -762,6 +762,14 @@ func profileFromMap(payload map[string]interface{}) profile {
 		IdleRepollDataSeconds:       floatField(payload, 0.1, "idleRepollDataSeconds", "idle_repoll_data_seconds"),
 		TraceEnabled:                boolField(payload, false, "traceEnabled", "trace_enabled"),
 	}
+}
+
+func stableLocalPortField(payload map[string]interface{}, fallback int, keys ...string) int {
+	value := intField(payload, fallback, keys...)
+	if value == 0 {
+		return fallback
+	}
+	return value
 }
 
 func legacyAutoBatch(value int) int {
@@ -805,6 +813,12 @@ func loadProfiles(p paths) (profileStore, error) {
 	for index := range store.Profiles {
 		store.Profiles[index].MaxBatchBytes = legacyAutoBatch(store.Profiles[index].MaxBatchBytes)
 		store.Profiles[index].DataUploadMaxBatchBytes = legacyAutoBatch(store.Profiles[index].DataUploadMaxBatchBytes)
+		if store.Profiles[index].HTTPPort == 0 {
+			store.Profiles[index].HTTPPort = defaultHTTPPort
+		}
+		if store.Profiles[index].SOCKSPort == 0 {
+			store.Profiles[index].SOCKSPort = defaultSOCKSPort
+		}
 	}
 	return store, nil
 }
@@ -977,6 +991,22 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 		"http2_enabled": map[string]bool{
 			"ctl":  prof.HTTP2Ctl,
 			"data": prof.HTTP2Data,
+		},
+		"up_workers": map[string]int{
+			"data": 16,
+		},
+		"adaptive_upload": map[string]interface{}{
+			"enabled":                   true,
+			"lanes":                     []string{"data"},
+			"min_workers":               2,
+			"initial_workers":           6,
+			"max_workers":               16,
+			"min_batch_bytes":           65536,
+			"max_batch_bytes":           524288,
+			"increase_after_successes":  2,
+			"decrease_after_errors":     1,
+			"backlog_threshold_frames":  32,
+			"decision_interval_seconds": 0.25,
 		},
 	}
 	if prof.MaxBatchBytes > 0 {

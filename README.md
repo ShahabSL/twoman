@@ -321,6 +321,12 @@ Default helper ports:
 - HTTP proxy: `127.0.0.1:18092`
 - SOCKS5 proxy: `127.0.0.1:11092`
 
+Connection strings are route definitions, not local socket assignments. Desktop
+and Linux imports therefore default to stable local ports so reconnects and
+systemd restarts do not surprise users with a new browser/proxy endpoint.
+Android can still use dynamic local ports internally because its app services
+consume the helper listen-state directly.
+
 Use this path when you need to inspect or override each stage manually:
 - [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md)
 

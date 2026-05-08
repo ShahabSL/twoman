@@ -189,7 +189,7 @@ PY
 "$TMP_DIR/twoman" --home "$STATE_DIR" import "$PROFILE_TEXT" > "$TMP_DIR/import.out"
 grep -q "Imported profile: CLI E2E" "$TMP_DIR/import.out"
 
-"$TMP_DIR/twoman" --home "$STATE_DIR" connect > "$TMP_DIR/connect.out"
+"$TMP_DIR/twoman" --home "$STATE_DIR" connect --http-port 0 --socks-port 0 > "$TMP_DIR/connect.out"
 grep -q "Twoman connected" "$TMP_DIR/connect.out"
 
 "$TMP_DIR/twoman" --home "$STATE_DIR" status --json > "$TMP_DIR/status.json"
