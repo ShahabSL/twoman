@@ -1,6 +1,6 @@
 # Twoman Desktop App
 
-`desktop_app/` is the new desktop client shell for Twoman.
+`desktop_app/` is the Windows desktop client shell for Twoman.
 
 Stack:
 - Tauri 2
@@ -27,7 +27,7 @@ Requirements:
 - Node.js 22+
 - Rust toolchain
 - Go toolchain for source-mode helper execution
-- Python 3 for the desktop SOCKS gateway sidecar
+- Python 3 for the Windows desktop SOCKS gateway sidecar
 
 Install dependencies:
 
@@ -73,13 +73,6 @@ On Windows, creating the TUN interface requires Administrator privileges.
 
 ## Sidecar Builds
 
-Build Linux sidecars:
-
-```bash
-cd desktop_app
-./scripts/build_sidecars_linux.sh
-```
-
 Build Windows sidecars from Windows Python:
 
 ```bat
@@ -88,7 +81,6 @@ scripts\build_sidecars_windows.bat
 ```
 
 The sidecars are written to:
-- `src-tauri/resources/sidecars/linux/`
 - `src-tauri/resources/sidecars/windows/`
 
 On Windows, the sidecar build also downloads the pinned `sing-box` release for
@@ -151,15 +143,8 @@ not depend on one blurred downscale from a large raster.
 
 ## Packaging
 
-Linux bundle:
-
-```bash
-cd desktop_app
-npm run tauri build
-```
-
-The app looks for bundled sidecars first. If no bundled helper sidecar exists,
-development builds fall back to `go run ./helper-agent`.
+Linux users should use the `twoman` CLI bundle from `client-cli/`. The Tauri
+desktop app is kept for Windows packaging and validation.
 
 ## Validation
 

@@ -30,10 +30,13 @@ Use:
   twoman service install
   twoman status
   twoman service logs
+  twoman logs export --output ~/twoman-diagnostics
+  twoman profiles delete NAME
   twoman service stop
 
-The helper sidecar is installed automatically. Do not pass --helper-bin unless
-you are developing or testing a custom helper binary.
+Imported profiles use stable local ports by default. The helper sidecar is
+installed automatically; do not pass --helper-bin unless you are developing or
+testing a custom helper binary.
 EOF
 
 tar -C "$(dirname "${OUT_DIR}")" -czf "${ARCHIVE_PATH}" "$(basename "${OUT_DIR}")"

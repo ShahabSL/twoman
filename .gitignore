@@ -17,7 +17,5 @@ host/runtime/bridge-config.json
 host/passenger_python/runtime/
 output/
 desktop_app/build/
-desktop_client/build/
-desktop_client/dist/
 host/node_selector/node_modules/
 dist/

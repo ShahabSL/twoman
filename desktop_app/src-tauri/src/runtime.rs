@@ -19,10 +19,11 @@ use crate::{
     },
     storage::{
         helper_config_path, helper_listen_state_path, helper_log_path, helper_pid_path,
-        load_profiles, load_settings, load_shares, normalize_mode_for_platform, normalize_settings,
-        read_log_tail, save_profiles, save_settings, save_shares, share_config_path,
-        share_log_path, share_pid_path, tunnel_config_path, tunnel_log_path, tunnel_pid_path,
-        tunnel_work_dir, validate_profile, validate_share, AppPaths,
+        load_profiles, load_settings, load_shares, normalize_mode_for_platform,
+        normalize_profile_transport_tuning, normalize_settings, read_log_tail, save_profiles,
+        save_settings, save_shares, share_config_path, share_log_path, share_pid_path,
+        tunnel_config_path, tunnel_log_path, tunnel_pid_path, tunnel_work_dir, validate_profile,
+        validate_share, AppPaths,
     },
     system_proxy::SystemProxyManager,
 };
@@ -208,7 +209,8 @@ impl DesktopRuntime {
         })
     }
 
-    pub fn save_profile(&self, profile: ClientProfile) -> Result<(), String> {
+    pub fn save_profile(&self, mut profile: ClientProfile) -> Result<(), String> {
+        normalize_profile_transport_tuning(&mut profile);
         validate_profile(&profile)?;
         let mut profiles = load_profiles(&self.paths)?;
         upsert_by_id(&mut profiles, profile, |candidate| candidate.id.as_str());

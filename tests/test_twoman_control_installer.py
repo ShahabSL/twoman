@@ -93,7 +93,7 @@ class TwomanInstallerTests(unittest.TestCase):
         self.assertEqual(parser.parse_args(["status"]).command, "status")
         self.assertEqual(parser.parse_args(["config"]).command, "config")
         self.assertEqual(parser.parse_args(["restart"]).command, "restart")
-        self.assertEqual(parser.parse_args(["tui"]).command, "tui")
+        self.assertEqual(parser.parse_args(["list"]).command, "list")
 
     def test_server_cli_overview_is_useful_without_tui(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -112,8 +112,9 @@ class TwomanInstallerTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         text = output.getvalue()
         self.assertIn("Twoman server control", text)
-        self.assertIn("twoman status", text)
-        self.assertIn("twoman tui", text)
+        self.assertIn("twoman-server status", text)
+        self.assertIn("twoman-server config", text)
+        self.assertNotIn("twoman tui", text)
 
     def test_profile_share_text_can_pin_target_agent(self) -> None:
         text = build_profile_share_text(

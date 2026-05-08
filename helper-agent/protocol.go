@@ -39,6 +39,7 @@ const (
 	frameHeaderSize = 20
 
 	initialWindow               = 16 * 1024 * 1024
+	maxSendCredit               = initialWindow * 4
 	priLimit                    = 64 * 1024
 	readChunkSize               = 128 * 1024
 	downReadBufferSize          = 256 * 1024
@@ -48,6 +49,16 @@ const (
 )
 
 var allLanes = []string{LaneCTL, LanePRI, LaneBulk}
+
+func addSendCredit(current, amount int64) int64 {
+	if amount <= 0 {
+		return current
+	}
+	if current >= maxSendCredit || amount > maxSendCredit-current {
+		return maxSendCredit
+	}
+	return current + amount
+}
 
 // Frame mirrors the Python Frame dataclass.
 type Frame struct {

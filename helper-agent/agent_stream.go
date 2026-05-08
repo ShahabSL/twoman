@@ -227,7 +227,7 @@ func (s *AgentStream) onFrame(f *Frame) {
 	switch f.TypeID {
 	case FrameWindow:
 		s.sendCreditMu.Lock()
-		s.sendCredit += int64(f.Offset)
+		s.sendCredit = addSendCredit(s.sendCredit, int64(f.Offset))
 		s.sendCreditCond.Broadcast()
 		s.sendCreditMu.Unlock()
 

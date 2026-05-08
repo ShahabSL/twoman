@@ -2,9 +2,9 @@
 
 - Verify the fast installer path still works:
   - `scripts/install_twoman.sh`
-  - `sudo twoman`
-  - `sudo twoman status`
-  - `sudo twoman config`
+  - `sudo twoman-server`
+  - `sudo twoman-server status`
+  - `sudo twoman-server config`
 - Verify the headless Linux client bundle:
   - `scripts/build_client_cli_linux.sh`
   - `dist/client-cli/twoman-linux-amd64/twoman --help`
@@ -13,15 +13,15 @@
   - `scripts/deploy_host.sh`
   - `scripts/deploy_hidden_server.sh`
   - `scripts/install_hidden_server_local.sh`
-  - `scripts/start_client.sh`
 - Verify the focused CI checks pass locally:
   - `cd helper-agent && go test ./...`
-  - `python3 -m unittest tests.test_twoman_dns tests.test_twoman_proxy tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_desktop_client_tui`
+  - `cd client-cli && go test ./...`
+  - `python3 -m unittest tests.test_twoman_dns tests.test_twoman_proxy tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_twoman_control_registry`
   - `bash tests/run_e2e_go_node_http.sh`
-  - `bash tests/run_desktop_client_e2e.sh`
+  - `bash tests/run_client_cli_e2e.sh`
 - Rebuild release artifacts when shared runtime files changed:
   - Android APK/AAB
-  - Linux desktop bundles
+  - Linux CLI bundle
   - Windows desktop bundles
 - Verify no real tokens are present in tracked files
 - Verify `host/storage/` is empty or absent

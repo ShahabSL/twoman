@@ -195,12 +195,12 @@ class NodeSelectorRuntimeTests(unittest.TestCase):
         )
         with broker:
             broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-main", session="main-session")
-            broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-nima", session="nima-session")
+            broker.request("GET", "/data/down", "agent-token", "agent", b"", peer="agent-alt", session="alt-session")
             open_frame = encode_frame(
                 Frame(
                     FRAME_OPEN,
                     stream_id=17,
-                    payload=make_open_payload("example.com", 443, target_agent_peer_label="agent-nima"),
+                    payload=make_open_payload("example.com", 443, target_agent_peer_label="agent-alt"),
                 )
             )
 
@@ -212,12 +212,12 @@ class NodeSelectorRuntimeTests(unittest.TestCase):
                 _encrypt("client-token", open_frame),
                 peer="helper-bench",
                 session="helper-session",
-                extra_headers={"X-Twoman-Target-Agent": "agent-nima"},
+                extra_headers={"X-Twoman-Target-Agent": "agent-alt"},
             )
 
             self.assertEqual(status, 200, payload)
             streams = broker.get_json("/health")["stream_details"]
-            self.assertEqual(streams[0]["agent_session_id"], "nima-session")
+            self.assertEqual(streams[0]["agent_session_id"], "alt-session")
 
     def test_node_broker_fails_targeted_open_when_agent_unavailable(self) -> None:
         broker = _NodeBrokerFixture(

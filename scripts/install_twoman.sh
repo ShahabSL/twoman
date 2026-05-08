@@ -59,5 +59,8 @@ ensure_python_venv_support
 BOOTSTRAP_VENV="$(create_bootstrap_venv)"
 
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
-export TWOMAN_LAUNCHER_PATH="${TWOMAN_LAUNCHER_PATH:-/usr/local/bin/twoman}"
+if [ -z "${TWOMAN_SERVER_LAUNCHER_PATH:-}" ] && [ -n "${TWOMAN_LAUNCHER_PATH:-}" ]; then
+  export TWOMAN_SERVER_LAUNCHER_PATH="${TWOMAN_LAUNCHER_PATH}"
+fi
+export TWOMAN_SERVER_LAUNCHER_PATH="${TWOMAN_SERVER_LAUNCHER_PATH:-/usr/local/bin/twoman-server}"
 "${BOOTSTRAP_VENV}/bin/python" -m twoman_control.cli install --repo-root "${REPO_ROOT}" "$@"

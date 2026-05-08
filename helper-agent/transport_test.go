@@ -19,15 +19,35 @@ func TestRequeueRetriesOnlyIdempotentFrames(t *testing.T) {
 	first := tp.popReplay(LaneData)
 	second := tp.popReplay(LaneData)
 	third := tp.popReplay(LaneData)
+	fourth := tp.popReplay(LaneData)
 
-	if first == nil || first.TypeID != FrameData {
-		t.Fatalf("expected DATA replay first, got %#v", first)
+	if first == nil || first.TypeID != FrameWindow {
+		t.Fatalf("expected WINDOW replay first, got %#v", first)
 	}
-	if second == nil || second.TypeID != FramePing {
-		t.Fatalf("expected PING replay second, got %#v", second)
+	if second == nil || second.TypeID != FrameData {
+		t.Fatalf("expected DATA replay second, got %#v", second)
 	}
-	if third != nil {
-		t.Fatalf("expected only idempotent replay frames, got %#v", third)
+	if third == nil || third.TypeID != FramePing {
+		t.Fatalf("expected PING replay third, got %#v", third)
+	}
+	if fourth != nil {
+		t.Fatalf("expected only retry-safe replay frames, got %#v", fourth)
+	}
+}
+
+func TestWindowCreditIsCapped(t *testing.T) {
+	helperStream := newProxyStream(1, "example.com", 443, nil)
+	helperStream.sendCredit = maxSendCredit - 1
+	helperStream.onFrame(&Frame{TypeID: FrameWindow, Offset: uint64(initialWindow)})
+	if helperStream.sendCredit != maxSendCredit {
+		t.Fatalf("expected helper credit cap %d, got %d", maxSendCredit, helperStream.sendCredit)
+	}
+
+	agentStream := newAgentStream(2, "example.com", 443, nil)
+	agentStream.sendCredit = maxSendCredit - 1
+	agentStream.onFrame(&Frame{TypeID: FrameWindow, Offset: uint64(initialWindow)})
+	if agentStream.sendCredit != maxSendCredit {
+		t.Fatalf("expected agent credit cap %d, got %d", maxSendCredit, agentStream.sendCredit)
 	}
 }
 
@@ -177,8 +197,8 @@ func TestAdaptiveUploadControllerBoundsWorkersAndBatch(t *testing.T) {
 	}
 
 	tp.adaptiveUpload.markError(LaneData)
-	if tp.adaptiveUpload.workerActive(LaneData, 4) {
-		t.Fatal("expected error to reduce active workers")
+	if tp.adaptiveUpload.workerActive(LaneData, 2) {
+		t.Fatal("expected error to halve active workers down to the floor")
 	}
 	if got := tp.uploadProfile(LaneData).maxBatchBytes; got != 262144 {
 		t.Fatalf("expected error to reduce batch to floor, got %d", got)

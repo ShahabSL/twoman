@@ -9,6 +9,9 @@ use crate::models::{
     ClientProfile, ConnectionMode, PersistedSettings, SharedProxy, SharedProxyProtocol,
 };
 
+const DEFAULT_DESKTOP_HTTP_PORT: u16 = 28_167;
+const DEFAULT_DESKTOP_SOCKS_PORT: u16 = 21_167;
+
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     pub config_dir: PathBuf,
@@ -213,7 +216,13 @@ pub fn validate_profile(profile: &ClientProfile) -> Result<(), String> {
     Ok(())
 }
 
-fn normalize_profile_transport_tuning(profile: &mut ClientProfile) {
+pub fn normalize_profile_transport_tuning(profile: &mut ClientProfile) {
+    if profile.http_port == 0 {
+        profile.http_port = DEFAULT_DESKTOP_HTTP_PORT;
+    }
+    if profile.socks_port == 0 {
+        profile.socks_port = DEFAULT_DESKTOP_SOCKS_PORT;
+    }
     if profile.max_batch_bytes == 65_536 {
         profile.max_batch_bytes = 0;
     }
@@ -274,7 +283,10 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::portable_root_from_exe_path;
+    use super::{
+        normalize_profile_transport_tuning, portable_root_from_exe_path, ClientProfile,
+        DEFAULT_DESKTOP_HTTP_PORT, DEFAULT_DESKTOP_SOCKS_PORT,
+    };
 
     fn temp_root() -> PathBuf {
         let nonce = SystemTime::now()
@@ -319,5 +331,36 @@ mod tests {
         assert_eq!(resolved, exe_dir.join("portable-data"));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn profile_zero_ports_migrate_to_stable_desktop_defaults() {
+        let mut profile = ClientProfile {
+            id: "profile".into(),
+            name: "Profile".into(),
+            broker_base_url: "https://example.com/parvaneh".into(),
+            client_token: "token".into(),
+            target_agent_peer_label: String::new(),
+            verify_tls: true,
+            http2_ctl: true,
+            http2_data: false,
+            http_port: 0,
+            socks_port: 0,
+            http_timeout_seconds: 30,
+            flush_delay_seconds: 0.01,
+            max_batch_bytes: 65_536,
+            data_upload_max_batch_bytes: 65_536,
+            data_upload_flush_delay_seconds: 0.0,
+            idle_repoll_ctl_seconds: 0.05,
+            idle_repoll_data_seconds: 0.1,
+            trace_enabled: false,
+        };
+
+        normalize_profile_transport_tuning(&mut profile);
+
+        assert_eq!(profile.http_port, DEFAULT_DESKTOP_HTTP_PORT);
+        assert_eq!(profile.socks_port, DEFAULT_DESKTOP_SOCKS_PORT);
+        assert_eq!(profile.max_batch_bytes, 0);
+        assert_eq!(profile.data_upload_max_batch_bytes, 0);
     }
 }

@@ -142,7 +142,7 @@ func (s *ProxyStream) onFrame(f *Frame) {
 	case FrameWindow:
 		amount := int64(f.Offset)
 		s.sendCreditMu.Lock()
-		s.sendCredit += amount
+		s.sendCredit = addSendCredit(s.sendCredit, amount)
 		s.sendCreditCond.Broadcast()
 		s.sendCreditMu.Unlock()
 

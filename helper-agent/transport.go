@@ -1095,7 +1095,7 @@ func (t *laneTransport) requeue(lane string, frames []*Frame) {
 	}
 	retriable := make([]*Frame, 0, len(frames))
 	for _, frame := range frames {
-		if frame.TypeID == FrameData || frame.TypeID == FramePing {
+		if frame.TypeID == FrameData || frame.TypeID == FrameWindow || frame.TypeID == FramePing {
 			retriable = append(retriable, frame)
 		}
 	}

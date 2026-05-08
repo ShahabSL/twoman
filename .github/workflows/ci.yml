@@ -30,7 +30,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r desktop_client/requirements.txt
+          python -m pip install -r requirements.txt
 
       - name: Verify Python modules compile
         run: |
@@ -44,11 +44,7 @@ jobs:
             hidden_server/agent_watchdog.py \
             host/runtime/http_broker_daemon.py \
             scripts/benchmark_live_ceiling.py \
-            desktop_client/models.py \
-            desktop_client/runtime.py \
-            desktop_client/controller.py \
             desktop_client/socks_gateway.py \
-            desktop_client/tui.py \
             twoman_control/*.py \
             tests/test_twoman_dns.py \
             tests/test_twoman_proxy.py \
@@ -78,12 +74,10 @@ jobs:
             scripts/deploy_host.sh \
             scripts/deploy_host_node_selector.sh \
             scripts/deploy_host_passenger.sh \
-            scripts/start_client.sh \
             scripts/build_client_cli_linux.sh \
             client-cli/install-linux.sh \
             tests/run_e2e_go_node_http.sh \
-            tests/run_client_cli_e2e.sh \
-            tests/run_desktop_client_e2e.sh
+            tests/run_client_cli_e2e.sh
 
       - name: Run Go node backend smoke test
         run: bash tests/run_e2e_go_node_http.sh
@@ -91,17 +85,8 @@ jobs:
       - name: Run client CLI end-to-end test
         run: bash tests/run_client_cli_e2e.sh
 
-      - name: Run desktop TUI tests
-        run: python3 -m unittest tests/test_desktop_client_tui.py
-
       - name: Run installer tests
         run: python3 -m unittest tests.test_twoman_control_cpanel tests.test_twoman_control_installer tests.test_twoman_control_manager tests.test_twoman_control_registry
-
-      - name: Run desktop client end-to-end test
-        run: bash tests/run_desktop_client_e2e.sh
-
-      - name: Build frozen Linux desktop client
-        run: ./desktop_client/build_linux.sh
 
       - name: Install Tauri Linux dependencies
         env:

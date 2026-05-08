@@ -222,40 +222,21 @@ sudo systemctl enable --now twoman-agent-watchdog.timer
 sudo systemctl start twoman-agent-watchdog.service
 ```
 
-## 3. Local helper
+## 3. Linux client
 
-Create `local_client/config.json` from `local_client/config.sample.json`.
-
-Example:
-
-```json
-{
-  "broker_base_url": "https://your-host.example/api/v1/telemetry",
-  "upstream_proxy_url": "",
-  "client_token": "replace-with-client-token",
-  "listen_host": "127.0.0.1",
-  "http_listen_port": 18092,
-  "socks_listen_port": 11092,
-  "http_timeout_seconds": 30,
-  "flush_delay_seconds": 0.01,
-  "max_batch_bytes": 65536,
-  "http2_enabled": {
-    "ctl": true,
-    "data": false
-  }
-}
-```
-
-Run helper with the Go dataplane:
+The supported Linux client is the Go `twoman` CLI bundle:
 
 ```bash
-scripts/start_client.sh local_client/config.json
+scripts/build_client_cli_linux.sh
+sudo dist/client-cli/twoman-linux-amd64/install.sh
+twoman import 'twoman://profile?data=...'
+twoman service install
+twoman status
 ```
 
-Stop helper:
-
-- foreground run: `Ctrl+C`
-- background run: `kill <pid>`
+Use `twoman logs export --output DIR` for support bundles. The legacy
+foreground helper launcher has been removed so Linux has one maintained client
+surface.
 
 ## 4. Verification
 

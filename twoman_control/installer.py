@@ -36,7 +36,12 @@ from twoman_control.registry import (
 )
 
 DEFAULT_BRIDGE_PUBLIC_BASE_PATH = ""
-LAUNCHER_PATH = Path(os.environ.get("TWOMAN_LAUNCHER_PATH", "/usr/local/bin/twoman"))
+SERVER_LAUNCHER_PATH = Path(
+    os.environ.get(
+        "TWOMAN_SERVER_LAUNCHER_PATH",
+        os.environ.get("TWOMAN_LAUNCHER_PATH", "/usr/local/bin/twoman-server"),
+    )
+)
 
 
 @dataclass(slots=True)
@@ -183,20 +188,9 @@ def _create_control_venv(control_root: Path, bundle_root: Path) -> None:
     python_bin = venv_root / "bin" / "python"
     subprocess.run([str(python_bin), "-m", "pip", "install", "--upgrade", "pip", "wheel"], check=True)
     subprocess.run([str(python_bin), "-m", "pip", "install", "-r", str(bundle_root / "requirements.txt")], check=True)
-    textual_result = subprocess.run(
-        [str(python_bin), "-m", "pip", "install", "textual>=6,<7"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if textual_result.returncode != 0:
-        print("Warning: optional Textual install failed; twoman will use the built-in terminal menu.")
-        if textual_result.stderr.strip():
-            print(textual_result.stderr.strip().splitlines()[-1])
-
 
 def _install_launcher(control_root: Path) -> None:
-    launcher_path = LAUNCHER_PATH
+    launcher_path = SERVER_LAUNCHER_PATH
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
     control_root_quoted = shlex.quote(str(control_root))
     bundle_root_quoted = shlex.quote(str(control_root / "bundle"))
@@ -208,7 +202,7 @@ if [ "$(id -u)" -ne 0 ]; then
   exec sudo -E "$0" "$@"
 fi
 export TWOMAN_CONTROL_ROOT={control_root_quoted}
-export TWOMAN_LAUNCHER_PATH={launcher_path_quoted}
+export TWOMAN_SERVER_LAUNCHER_PATH={launcher_path_quoted}
 export PYTHONPATH={bundle_root_quoted}:${{PYTHONPATH:-}}
 exec {python_bin_quoted} -m twoman_control.cli "$@"
 """
@@ -1139,13 +1133,13 @@ def install(namespace: object) -> InstallState:
             state.client_http2_data,
             state.public_proxy_url,
         )
-    print("Bootstrapping the local twoman management command...")
+    print("Bootstrapping the local twoman-server management command...")
     save_instance_state(args.control_root, state)
     _create_control_venv(args.control_root, bundle_root)
     _install_launcher(args.control_root)
 
     print("\nTwoman deployment complete.")
-    print(f"  Management command: {LAUNCHER_PATH}")
+    print(f"  Management command: {SERVER_LAUNCHER_PATH}")
     print(f"  Instance: {state.instance_name}")
     print(f"  State file: {state_path(args.control_root, state.instance_name)}")
     print(f"  Client config: {profile_share_path(args.control_root, state.instance_name)}")

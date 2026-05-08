@@ -72,8 +72,8 @@ Main host broker:
 Go helper/agent dataplane:
 - `helper-agent/`
 
-Client launcher defaults:
-- `scripts/start_client.sh`
+Linux client defaults:
+- `client-cli/` installed as `twoman`
 
 Friend bundle:
 - `private_handoff/friend_client_bundle/`

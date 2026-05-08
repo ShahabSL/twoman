@@ -24,7 +24,7 @@ func TestParseProfileShareText(t *testing.T) {
 		"name":                        "CLI test",
 		"brokerBaseUrl":               "https://example.com/parvaneh",
 		"clientToken":                 "client-token",
-		"targetAgentPeerLabel":        "agent-nima",
+		"targetAgentPeerLabel":        "agent-alt",
 		"verifyTls":                   true,
 		"http2Ctl":                    false,
 		"httpPort":                    18092,
@@ -53,7 +53,7 @@ func TestParseProfileShareText(t *testing.T) {
 	if prof.DataUploadMaxBatchBytes != 262144 {
 		t.Fatalf("unexpected data batch: %d", prof.DataUploadMaxBatchBytes)
 	}
-	if prof.TargetAgentPeerLabel != "agent-nima" {
+	if prof.TargetAgentPeerLabel != "agent-alt" {
 		t.Fatalf("unexpected target agent: %q", prof.TargetAgentPeerLabel)
 	}
 }
@@ -127,6 +127,120 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	}
 }
 
+func TestProfilesDeleteAndDefault(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	alpha := shareText(t, map[string]interface{}{
+		"name":          "Alpha",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "alpha-token",
+	})
+	beta := shareText(t, map[string]interface{}{
+		"name":          "Beta",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "beta-token",
+	})
+	if err := run([]string{"--home", home, "import", alpha}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--home", home, "import", beta}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := run([]string{"--home", home, "profiles", "default", "Alpha"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Default profile: Alpha") {
+		t.Fatalf("unexpected default output: %s", out.String())
+	}
+	out.Reset()
+	if err := run([]string{"--home", home, "profiles", "delete", "Beta"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Deleted profile: Beta") {
+		t.Fatalf("unexpected delete output: %s", out.String())
+	}
+	p, err := resolvePaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Profiles) != 1 || store.Profiles[0].Name != "Alpha" || store.Default != "Alpha" {
+		t.Fatalf("unexpected store after delete: %+v", store)
+	}
+}
+
+func TestLogsExportRedactsSecrets(t *testing.T) {
+	home := t.TempDir()
+	exportParent := filepath.Join(t.TempDir(), "exports")
+	raw := shareText(t, map[string]interface{}{
+		"name":          "Diagnostics",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "secret-client-token",
+	})
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := run([]string{"--home", home, "import", raw}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	p, err := resolvePaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof, err := store.selectProfile("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRuntimeConfig(p, prof, "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.logPath, []byte("line one\nline two\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := run([]string{"--home", home, "logs", "export", "--output", exportParent, "-n", "10"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Diagnostics exported:") {
+		t.Fatalf("unexpected export output: %s", out.String())
+	}
+	entries, err := os.ReadDir(exportParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].IsDir() {
+		t.Fatalf("expected one diagnostics directory, got %v", entries)
+	}
+	bundle := filepath.Join(exportParent, entries[0].Name())
+	for _, name := range []string{"profiles.redacted.json", "runtime-config.redacted.json", "helper.log", "paths.txt"} {
+		if _, err := os.Stat(filepath.Join(bundle, name)); err != nil {
+			t.Fatalf("missing %s: %v", name, err)
+		}
+	}
+	all := strings.Builder{}
+	filepath.WalkDir(bundle, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			data, _ := os.ReadFile(path)
+			all.Write(data)
+		}
+		return nil
+	})
+	if strings.Contains(all.String(), "secret-client-token") {
+		t.Fatal("diagnostics export leaked client token")
+	}
+	if !strings.Contains(all.String(), "<redacted>") {
+		t.Fatal("diagnostics export did not redact secret fields")
+	}
+}
+
 func TestResolveHelperBinUsesEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "twoman-helper-agent")
@@ -155,6 +269,12 @@ func TestUsageShowsCleanTwomanFlow(t *testing.T) {
 	}
 	if !strings.Contains(text, "twoman [--home DIR] service install [--profile NAME]") {
 		t.Fatalf("usage does not show service flow:\n%s", text)
+	}
+	if !strings.Contains(text, "twoman [--home DIR] logs export --output DIR") {
+		t.Fatalf("usage does not show diagnostics export flow:\n%s", text)
+	}
+	if !strings.Contains(text, "twoman [--home DIR] profiles delete NAME") {
+		t.Fatalf("usage does not show profile deletion flow:\n%s", text)
 	}
 	if strings.Contains(text, "twoman-client") {
 		t.Fatalf("usage still exposes old binary name:\n%s", text)

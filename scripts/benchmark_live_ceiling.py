@@ -196,7 +196,7 @@ def deploy_go_agent(args: argparse.Namespace, server: dict[str, str], host_confi
             "TWOMAN_AUTO_WIREPROXY": "true",
         }
     )
-    print("deploy: updating server2 Go agent binary/config")
+    print("deploy: updating Go agent binary/config")
     proc = subprocess.run(
         ["bash", "scripts/deploy_hidden_server.sh"],
         cwd=str(ROOT),
@@ -584,13 +584,13 @@ def tunnel_variant(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--server-env", default="private_handoff/secrets/server2.env")
+    parser.add_argument("--server-env", default=os.environ.get("TWOMAN_SERVER_ENV", ""))
     parser.add_argument("--cpanel-base-url", default=os.environ.get("TWOMAN_CPANEL_BASE_URL", ""))
     parser.add_argument("--cpanel-username", default=os.environ.get("TWOMAN_CPANEL_USERNAME", ""))
     parser.add_argument("--cpanel-password", default=os.environ.get("TWOMAN_CPANEL_PASSWORD", ""))
     parser.add_argument("--cpanel-home", default="")
     parser.add_argument("--node-dir", default="parvaneh_node")
-    parser.add_argument("--broker-base-url", default="https://mirageclub.ir/parvaneh")
+    parser.add_argument("--broker-base-url", default=os.environ.get("TWOMAN_BROKER_BASE_URL", ""))
     parser.add_argument("--client-token", default=os.environ.get("TWOMAN_CLIENT_TOKEN", ""))
     parser.add_argument("--agent-token", default=os.environ.get("TWOMAN_AGENT_TOKEN", ""))
     parser.add_argument("--target-agent-peer-label", default="")
@@ -622,6 +622,10 @@ def main() -> int:
     parser.add_argument("--remote-agent-service", default="twoman-agent.service")
     parser.add_argument("--output-dir", default="output")
     args = parser.parse_args()
+    if not args.server_env:
+        raise SystemExit("--server-env or TWOMAN_SERVER_ENV is required")
+    if not args.broker_base_url:
+        raise SystemExit("--broker-base-url or TWOMAN_BROKER_BASE_URL is required")
     server = parse_server_env(ROOT / args.server_env)
     if args.client_token and args.agent_token:
         host_config = {"client_tokens": [args.client_token], "agent_tokens": [args.agent_token]}

@@ -9,7 +9,7 @@ from twoman_control.registry import load_registry, resolve_instance_name, set_de
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="twoman")
+    parser = argparse.ArgumentParser(prog="twoman-server")
     parser.add_argument("--instance", dest="global_instance", default="", help="managed instance name")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -55,8 +55,6 @@ def build_parser() -> argparse.ArgumentParser:
     tls_group.add_argument("--verify-tls", dest="verify_tls", action="store_true")
     tls_group.add_argument("--no-verify-tls", dest="verify_tls", action="store_false")
     install_parser.set_defaults(verify_tls=None)
-
-    subparsers.add_parser("tui", help="Open the interactive server management UI")
 
     for name, aliases, help_text in [
         ("verify", ["status"], "Run a non-interactive health check"),
@@ -140,10 +138,10 @@ def _run_overview(control_root: Path, instance_name: str) -> int:
         print("No managed instances are installed.")
         print("")
         print("Start here:")
-        print("  sudo twoman install")
+        print("  sudo twoman-server install")
         print("")
         print("Other commands:")
-        print("  twoman --help")
+        print("  twoman-server --help")
         return 0
 
     controller = ManagerController(control_root, instance_name or None)
@@ -158,11 +156,10 @@ def _run_overview(control_root: Path, instance_name: str) -> int:
     print(f"Outbound route: {controller.outbound_route_text()}")
     print("")
     print("Common commands:")
-    print("  twoman status       Run health checks")
-    print("  twoman logs         Show hidden-agent logs")
-    print("  twoman config       Print client import text")
-    print("  twoman list         List managed instances")
-    print("  twoman tui          Open the interactive UI")
+    print("  twoman-server status       Run health checks")
+    print("  twoman-server logs         Show hidden-agent logs")
+    print("  twoman-server config       Print client import text")
+    print("  twoman-server list         List managed instances")
     print("")
     print("Use --instance <name> before the command to target another instance.")
     return 0
@@ -192,7 +189,7 @@ def main() -> int:
             f"{'host ' if purge_host else ''}{'hidden ' if purge_hidden else ''}".strip()
         )
         return 0
-    from twoman_control.manager import ManagerController, launch_manager
+    from twoman_control.manager import ManagerController
 
     control_root = _control_root()
     instance_name = _selected_instance(args)
@@ -204,11 +201,8 @@ def main() -> int:
         return 0
     if command == "overview":
         return _run_overview(control_root, instance_name)
-    if command != "tui":
-        controller = ManagerController(control_root, instance_name or None)
-        return _run_action(controller, command)
-    launch_manager(control_root, instance_name or None)
-    return 0
+    controller = ManagerController(control_root, instance_name or None)
+    return _run_action(controller, command)
 
 
 if __name__ == "__main__":

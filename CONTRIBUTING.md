@@ -15,7 +15,7 @@ reviewable, and backed by tests or clear runtime validation.
 - Use conventional commits such as `feat:`, `fix:`, `docs:`, `refactor:`,
   `test:`, and `chore:`.
 - Prefer targeted fixes over broad rewrites.
-- Keep Android, desktop, local CLI, and hidden-server behavior aligned when
+- Keep Android, Windows desktop, Linux CLI, and hidden-server behavior aligned when
   touching `helper-agent/`.
 - When adding or changing deploy behavior, update the docs in the same change.
 
@@ -28,11 +28,12 @@ python3 -m unittest \
   tests.test_twoman_control_cpanel \
   tests.test_twoman_control_installer \
   tests.test_twoman_control_manager \
-  tests.test_desktop_client_tui
+  tests.test_twoman_control_registry
 
 cd helper-agent && go test ./...
+cd client-cli && go test ./...
 bash tests/run_e2e_go_node_http.sh
-bash tests/run_desktop_client_e2e.sh
+bash tests/run_client_cli_e2e.sh
 ```
 
 For release-oriented changes, also follow

@@ -125,7 +125,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	case "import":
 		return cmdImport(p, remaining[1:], stdout, stderr)
 	case "profiles":
-		return cmdProfiles(p, stdout)
+		return cmdProfiles(p, remaining[1:], stdout, stderr)
+	case "profile":
+		return cmdProfile(p, remaining[1:], stdout, stderr)
 	case "connect":
 		return cmdConnect(p, remaining[1:], stdout, stderr)
 	case "service":
@@ -156,8 +158,11 @@ Usage:
   twoman [--home DIR] service start|stop|restart|status|logs|uninstall
   twoman [--home DIR] status [--json]
   twoman [--home DIR] logs [-n LINES]
+  twoman [--home DIR] logs export --output DIR [-n LINES]
   twoman [--home DIR] disconnect
   twoman [--home DIR] profiles
+  twoman [--home DIR] profiles delete NAME
+  twoman [--home DIR] profiles default NAME
   twoman [--home DIR] config
 
 The CLI stores profiles locally, starts the Go helper in headless mode, and
@@ -269,7 +274,10 @@ func cmdImport(p paths, args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func cmdProfiles(p paths, stdout io.Writer) error {
+func cmdProfiles(p paths, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		return cmdProfile(p, args, stdout, stderr)
+	}
 	store, err := loadProfiles(p)
 	if err != nil {
 		return err
@@ -285,6 +293,119 @@ func cmdProfiles(p paths, stdout io.Writer) error {
 		}
 		fmt.Fprintf(stdout, "%s %s\t%s\tSOCKS:%d\tHTTP:%d\n", marker, prof.Name, prof.BrokerBaseURL, prof.SOCKSPort, prof.HTTPPort)
 	}
+	return nil
+}
+
+func cmdProfile(p paths, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 || args[0] == "list" {
+		return cmdProfiles(p, nil, stdout, stderr)
+	}
+	switch args[0] {
+	case "delete", "remove", "rm":
+		return cmdProfileDelete(p, args[1:], stdout, stderr)
+	case "default", "set-default":
+		return cmdProfileDefault(p, args[1:], stdout, stderr)
+	case "help", "-h", "--help":
+		printProfileUsage(stdout)
+		return nil
+	default:
+		return fmt.Errorf("unknown profile command %q", args[0])
+	}
+}
+
+func printProfileUsage(w io.Writer) {
+	fmt.Fprintln(w, `Twoman profiles
+
+Usage:
+  twoman profiles
+  twoman profiles delete [--force] NAME
+  twoman profiles default NAME
+
+Imported profiles are stored in the local Twoman client state directory.`)
+}
+
+func cmdProfileDelete(p paths, args []string, stdout, stderr io.Writer) error {
+	force := false
+	var nameParts []string
+	for _, arg := range args {
+		switch arg {
+		case "--force", "-force":
+			force = true
+		case "help", "-h", "--help":
+			printProfileUsage(stdout)
+			return nil
+		default:
+			nameParts = append(nameParts, arg)
+		}
+	}
+	name := strings.TrimSpace(strings.Join(nameParts, " "))
+	if name == "" {
+		return errors.New("profile name is required")
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i, prof := range store.Profiles {
+		if prof.Name == name {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("profile %q not found", name)
+	}
+	if status, ok := currentStatus(p); ok && status.ProfileName == name && !force {
+		return fmt.Errorf("profile %q is currently running; run `twoman disconnect` first or pass --force", name)
+	}
+	store.Profiles = append(store.Profiles[:index], store.Profiles[index+1:]...)
+	if store.Default == name {
+		store.Default = ""
+		if len(store.Profiles) > 0 {
+			store.Default = store.Profiles[0].Name
+		}
+	}
+	if err := saveProfiles(p, store); err != nil {
+		return err
+	}
+	if store.Default == "" {
+		_ = os.Remove(p.currentPath)
+	} else {
+		_ = os.WriteFile(p.currentPath, []byte(store.Default+"\n"), 0600)
+	}
+	fmt.Fprintf(stdout, "Deleted profile: %s\n", name)
+	if force {
+		fmt.Fprintln(stdout, "A running helper keeps its current in-memory config until it is restarted.")
+	}
+	return nil
+}
+
+func cmdProfileDefault(p paths, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("profiles default", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(strings.Join(fs.Args(), " "))
+	if name == "" {
+		return errors.New("profile name is required")
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		return err
+	}
+	if _, err := store.selectProfile(name); err != nil {
+		return err
+	}
+	store.Default = name
+	if err := saveProfiles(p, store); err != nil {
+		return err
+	}
+	if err := os.WriteFile(p.currentPath, []byte(name+"\n"), 0600); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Default profile: %s\n", name)
 	return nil
 }
 
@@ -585,6 +706,16 @@ func runJournalctlUser(stdout, stderr io.Writer, args ...string) error {
 	return cmd.Run()
 }
 
+func captureJournalctlUser(args ...string) (string, error) {
+	fullArgs := append([]string{"--user"}, args...)
+	cmd := exec.Command("journalctl", fullArgs...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
 func userServiceIsActive(serviceName string) bool {
 	cmd := exec.Command("systemctl", "--user", "is-active", "--quiet", serviceName)
 	return cmd.Run() == nil
@@ -614,6 +745,9 @@ func cmdStatus(p paths, args []string, stdout, stderr io.Writer) error {
 }
 
 func cmdLogs(p paths, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "export" {
+		return cmdLogsExport(p, args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("logs", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	lines := fs.Int("n", 80, "number of log lines")
@@ -622,13 +756,180 @@ func cmdLogs(p paths, args []string, stdout, stderr io.Writer) error {
 	}
 	text, err := tailFile(p.logPath, *lines)
 	if err != nil {
-		return err
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if userServiceIsActive(clientServiceName) {
+			return runJournalctlUser(stdout, stderr, "-u", clientServiceName, "-n", strconv.Itoa(*lines), "--no-pager")
+		}
+		return fmt.Errorf("client log file not found at %s; if running as a service, try `twoman service logs`", p.logPath)
 	}
 	fmt.Fprint(stdout, text)
 	if !strings.HasSuffix(text, "\n") {
 		fmt.Fprintln(stdout)
 	}
 	return nil
+}
+
+func cmdLogsExport(p paths, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("logs export", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	outputDir := fs.String("output", ".", "directory where a diagnostics bundle directory is created")
+	lines := fs.Int("n", 1000, "number of recent log lines to export")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*outputDir) == "" {
+		return errors.New("output directory is required")
+	}
+	bundle, err := exportDiagnostics(p, *outputDir, *lines)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Diagnostics exported: %s\n", bundle)
+	return nil
+}
+
+func exportDiagnostics(p paths, outputDir string, maxLines int) (string, error) {
+	if maxLines <= 0 {
+		maxLines = 1000
+	}
+	parent, err := filepath.Abs(outputDir)
+	if err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(parent); err == nil && !info.IsDir() {
+		return "", fmt.Errorf("output path is not a directory: %s", parent)
+	}
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		return "", err
+	}
+	bundle, err := makeDiagnosticsDir(parent)
+	if err != nil {
+		return "", err
+	}
+
+	status, _ := currentStatus(p)
+	writeJSONDiagnostic(filepath.Join(bundle, "status.json"), status)
+	writeTextDiagnostic(filepath.Join(bundle, "paths.txt"), fmt.Sprintf(
+		"home=%s\nprofiles=%s\nruntime_config=%s\nruntime_state=%s\nlisten_state=%s\nclient_log=%s\nservice_unit=%s\n",
+		p.home,
+		p.profilesPath,
+		p.runtimeConfig,
+		p.runtimeStatePath,
+		p.listenStatePath,
+		p.logPath,
+		p.serviceUnitPath,
+	))
+	if store, err := loadProfiles(p); err == nil {
+		writeJSONDiagnostic(filepath.Join(bundle, "profiles.redacted.json"), redactJSON(store))
+	} else {
+		writeTextDiagnostic(filepath.Join(bundle, "profiles.error.txt"), err.Error()+"\n")
+	}
+	if configData, err := os.ReadFile(p.runtimeConfig); err == nil {
+		var payload interface{}
+		if err := json.Unmarshal(configData, &payload); err == nil {
+			writeJSONDiagnostic(filepath.Join(bundle, "runtime-config.redacted.json"), redactJSON(payload))
+		} else {
+			writeTextDiagnostic(filepath.Join(bundle, "runtime-config.error.txt"), err.Error()+"\n")
+		}
+	} else {
+		writeTextDiagnostic(filepath.Join(bundle, "runtime-config.error.txt"), err.Error()+"\n")
+	}
+	if listenData, err := os.ReadFile(p.listenStatePath); err == nil {
+		writeTextDiagnostic(filepath.Join(bundle, "listen-state.json"), string(listenData))
+	}
+	if unitData, err := os.ReadFile(p.serviceUnitPath); err == nil {
+		writeTextDiagnostic(filepath.Join(bundle, "twoman-client.service"), string(unitData))
+	}
+	if helperLog, err := tailFile(p.logPath, maxLines); err == nil {
+		writeTextDiagnostic(filepath.Join(bundle, "helper.log"), helperLog+"\n")
+	} else {
+		writeTextDiagnostic(filepath.Join(bundle, "helper.log.error.txt"), err.Error()+"\n")
+	}
+	if journal, err := captureJournalctlUser("-u", clientServiceName, "-n", strconv.Itoa(maxLines), "--no-pager"); err == nil {
+		writeTextDiagnostic(filepath.Join(bundle, "service-journal.log"), journal)
+	} else {
+		writeTextDiagnostic(filepath.Join(bundle, "service-journal.error.txt"), err.Error()+"\n")
+	}
+	if exe, err := os.Executable(); err == nil {
+		writeTextDiagnostic(filepath.Join(bundle, "client.txt"), fmt.Sprintf("executable=%s\nversion=local-build\n", exe))
+	}
+	return bundle, nil
+}
+
+func makeDiagnosticsDir(parent string) (string, error) {
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	for i := 0; i < 100; i++ {
+		name := "twoman-diagnostics-" + stamp
+		if i > 0 {
+			name = fmt.Sprintf("%s-%02d", name, i)
+		}
+		path := filepath.Join(parent, name)
+		if err := os.Mkdir(path, 0700); err == nil {
+			return path, nil
+		} else if !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
+	}
+	return "", errors.New("could not create unique diagnostics directory")
+}
+
+func writeJSONDiagnostic(path string, value interface{}) {
+	data, err := marshalIndentNoEscape(value)
+	if err != nil {
+		writeTextDiagnostic(path+".error.txt", err.Error()+"\n")
+		return
+	}
+	_ = os.WriteFile(path, append(data, '\n'), 0600)
+}
+
+func writeTextDiagnostic(path string, text string) {
+	_ = os.WriteFile(path, []byte(text), 0600)
+}
+
+func redactJSON(value interface{}) interface{} {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var decoded interface{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return value
+	}
+	return redactValue("", decoded)
+}
+
+func redactValue(key string, value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(typed))
+		for k, v := range typed {
+			if shouldRedactKey(k) {
+				out[k] = "<redacted>"
+			} else {
+				out[k] = redactValue(k, v)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(typed))
+		for i, v := range typed {
+			out[i] = redactValue(key, v)
+		}
+		return out
+	default:
+		return typed
+	}
+}
+
+func shouldRedactKey(key string) bool {
+	lower := strings.ToLower(key)
+	return strings.Contains(lower, "token") ||
+		strings.Contains(lower, "password") ||
+		strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "privatekey") ||
+		strings.Contains(lower, "private_key")
 }
 
 func cmdStop(p paths, stdout io.Writer) error {
@@ -925,7 +1226,7 @@ func startBackgroundHelper(p paths, prof profile, helperBin, listenHost string, 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Dir = p.runtimeDir
-	cmd.Env = helperEnv(prof)
+	cmd.Env = helperEnv(prof, "TWOMAN_STDERR_ALREADY_LOGGED=1")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return err
@@ -976,6 +1277,7 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 		"http_listen_port":              prof.HTTPPort,
 		"socks_listen_port":             prof.SOCKSPort,
 		"listen_state_path":             p.listenStatePath,
+		"log_path":                      p.logPath,
 		"http_timeout_seconds":          prof.HTTPTimeoutSeconds,
 		"heartbeat_interval_seconds":    15,
 		"interval_jitter_ratio":         0.2,
@@ -1030,12 +1332,14 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 	return os.WriteFile(p.runtimeConfig, data, 0600)
 }
 
-func helperEnv(prof profile) []string {
+func helperEnv(prof profile, extra ...string) []string {
 	value := "0"
 	if prof.TraceEnabled {
 		value = "1"
 	}
-	return append(os.Environ(), "TWOMAN_TRACE="+value)
+	env := append(os.Environ(), "TWOMAN_TRACE="+value)
+	env = append(env, extra...)
+	return env
 }
 
 func waitForListenState(path string, timeout time.Duration) (listenState, error) {
@@ -1276,6 +1580,7 @@ func tailFile(path string, maxLines int) (string, error) {
 	}
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	var lines []string
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())

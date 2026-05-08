@@ -194,7 +194,9 @@ func (c *adaptiveUploadController) markError(lane string) {
 	}
 	changed := false
 	if state.currentWorkers > state.minWorkers {
-		state.currentWorkers = max2i(state.minWorkers, state.currentWorkers-1)
+		// Congestion-control style multiplicative decrease reacts quickly when
+		// the managed host starts refusing or resetting uploads.
+		state.currentWorkers = max2i(state.minWorkers, state.currentWorkers/2)
 		changed = true
 	}
 	if state.currentBatch > state.minBatchBytes {

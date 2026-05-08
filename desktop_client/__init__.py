@@ -1,2 +1,1 @@
-"""Desktop client for managing Twoman helper profiles and shared SOCKS gateways."""
-
+"""Windows desktop shared-proxy sidecar package."""

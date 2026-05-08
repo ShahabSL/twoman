@@ -33,10 +33,10 @@ than the fixed advertised profile.
 
 ## Live Benchmark Results
 
-Latest stable Toork-server benchmark artifact:
-`output/twoman-toork-stable-candidate-20260507T143900Z.json`
+Latest stable direct-server benchmark artifact:
+`output/twoman-direct-stable-candidate-20260507T143900Z.json`
 
-Measured on `2026-05-07` against `https://mirageclub.ir/parvaneh`:
+Measured on `2026-05-07` against the managed host deployment path:
 
 - tunnel download, 1 concurrent 100 MB download: `30.81 Mbps`
 - tunnel download, 4 concurrent 100 MB downloads: `51.30 Mbps`
@@ -46,7 +46,7 @@ Measured on `2026-05-07` against `https://mirageclub.ir/parvaneh`:
 - tunnel upload, 8 concurrent 25 MB uploads: `49.07 Mbps`
 
 The best aggressive download-only artifact is:
-`output/twoman-toork-absolute-aggregate-20260507T133821Z.json`
+`output/twoman-direct-absolute-aggregate-20260507T133821Z.json`
 
 That profile reached `79.74 Mbps` at 8 concurrent 100 MB downloads, but it was
 not kept as the default because repeated stress later showed stalls and upload
@@ -56,7 +56,7 @@ instability.
 
 Raw host ingress was pushed independently of the full tunnel:
 
-- Toork server to host, 5 MB uploads: best burst was about `73.99 Mbps` at 32
+- Direct server to host, 5 MB uploads: best burst was about `73.99 Mbps` at 32
   concurrent uploads; higher concurrency started failing.
 - Local machine to host, 5 MB uploads: best burst was about `54.35 Mbps` at 64
   concurrent uploads; 96 concurrent uploads failed.
@@ -88,13 +88,13 @@ conditions.
 
 Latest adaptive check on `2026-05-07`:
 
-- server2 through WARP, fixed profile:
+- WARP-routed server, fixed profile:
   `19.24 Mbps` download and `9.25 Mbps` upload.
-- server2 through WARP, adaptive profile:
+- WARP-routed server, adaptive profile:
   `18.00 Mbps` download and `7.37 Mbps` upload.
-- Toork direct, fixed profile:
+- Direct server, fixed profile:
   `13.10 Mbps` download and `7.88 Mbps` upload.
-- Toork direct, adaptive profile:
+- Direct server, adaptive profile:
   `18.40 Mbps` download and `8.37 Mbps` upload.
 
 Decision: keep the fixed advertised profile as the default. Adaptive scheduling

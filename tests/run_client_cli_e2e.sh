@@ -151,6 +151,24 @@ PY
   return 1
 }
 
+retry_curl() {
+  local output="$1"
+  shift
+  local curl_error="$TMP_DIR/curl.err"
+  for _ in $(seq 1 30); do
+    if curl --fail --silent --show-error "$@" >"$output" 2>"$curl_error"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  cat "$curl_error" >&2 || true
+  for file in broker.log agent.log; do
+    [ -f "$TMP_DIR/$file" ] && echo "== $file ==" >&2 && tail -200 "$TMP_DIR/$file" >&2 || true
+  done
+  [ -f "$STATE_DIR/logs/helper.log" ] && echo "== helper.log ==" >&2 && tail -200 "$STATE_DIR/logs/helper.log" >&2 || true
+  return 1
+}
+
 wait_for_port 127.0.0.1 18115 broker
 wait_for_port 127.0.0.1 19090 origin
 wait_for_port 127.0.0.1 19443 tls-origin
@@ -212,10 +230,9 @@ PY
 wait_for_port 127.0.0.1 "$HELPER_HTTP_PORT" cli-http
 wait_for_port 127.0.0.1 "$HELPER_SOCKS_PORT" cli-socks
 
-curl --fail --silent --show-error \
+retry_curl "$TMP_DIR/socks.json" \
   --socks5-hostname "127.0.0.1:${HELPER_SOCKS_PORT}" \
-  "http://127.0.0.1:19090/socks-test?via=client-cli" \
-  > "$TMP_DIR/socks.json"
+  "http://127.0.0.1:19090/socks-test?via=client-cli"
 
 python3 - "$TMP_DIR/socks.json" <<'PY'
 import json, sys
@@ -224,14 +241,20 @@ assert payload["path"] == "/socks-test?via=client-cli", payload
 assert payload["method"] == "GET", payload
 PY
 
-curl --fail --silent --show-error --insecure \
+retry_curl "$TMP_DIR/http.txt" --insecure \
   --proxy "http://127.0.0.1:${HELPER_HTTP_PORT}" \
-  "https://127.0.0.1:19443/secure-test?via=client-cli" \
-  > "$TMP_DIR/http.txt"
+  "https://127.0.0.1:19443/secure-test?via=client-cli"
 
 grep -q 'secure:/secure-test?via=client-cli' "$TMP_DIR/http.txt"
 
 "$TMP_DIR/twoman" --home "$STATE_DIR" logs -n 20 > "$TMP_DIR/logs.out"
+"$TMP_DIR/twoman" --home "$STATE_DIR" logs export --output "$TMP_DIR/diagnostics" -n 20 > "$TMP_DIR/logs-export.out"
+grep -q "Diagnostics exported:" "$TMP_DIR/logs-export.out"
+DIAG_DIR="$(find "$TMP_DIR/diagnostics" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+test -n "$DIAG_DIR"
+test -f "$DIAG_DIR/helper.log"
+test -f "$DIAG_DIR/profiles.redacted.json"
+! grep -R 'test-client-token' "$DIAG_DIR"
 "$TMP_DIR/twoman" --home "$STATE_DIR" config > "$TMP_DIR/config.out"
 grep -q '<redacted>' "$TMP_DIR/config.out"
 ! grep -q 'test-client-token' "$TMP_DIR/config.out"
@@ -244,5 +267,10 @@ if "$TMP_DIR/twoman" --home "$STATE_DIR" status > "$TMP_DIR/status-after-stop.ou
   exit 1
 fi
 grep -q "Twoman disconnected" "$TMP_DIR/status-after-stop.out"
+
+"$TMP_DIR/twoman" --home "$STATE_DIR" profiles delete "CLI E2E" > "$TMP_DIR/profile-delete.out"
+grep -q "Deleted profile: CLI E2E" "$TMP_DIR/profile-delete.out"
+"$TMP_DIR/twoman" --home "$STATE_DIR" profiles > "$TMP_DIR/profiles-after-delete.out"
+grep -q "No profiles imported." "$TMP_DIR/profiles-after-delete.out"
 
 echo "TWOMAN CLIENT CLI E2E OK"

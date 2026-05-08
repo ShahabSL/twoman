@@ -359,7 +359,7 @@ if [ '${TWOMAN_PURGE_CONFLICTING_AGENT_UNITS}' = 'true' ]; then
     esac
     content=\"\$(systemctl cat \"\${unit}\" 2>/dev/null || true)\"
     case \"\${unit} \${content}\" in
-      *twoman-helper-agent*--mode\ agent*|*twoman-agent*|*twoman-nima*|*twoman-toork*|*twoman-server2*)
+      *twoman-helper-agent*--mode\ agent*|*twoman-agent*)
         systemctl stop \"\${unit}\" >/dev/null 2>&1 || true
         systemctl disable \"\${unit}\" >/dev/null 2>&1 || true
         systemctl reset-failed \"\${unit}\" >/dev/null 2>&1 || true

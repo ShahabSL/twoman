@@ -20,14 +20,14 @@ Twoman installer, and then:
 8. deploys the selected host backend
 9. installs the hidden agent locally as a systemd service with a watchdog
 10. validates broker health and performs a local helper probe
-11. installs `/usr/local/bin/twoman` for management
+11. installs `/usr/local/bin/twoman-server` for management
 
 The current Linux machine becomes the hidden server. You do not need a second
 manual SSH deploy step for the hidden agent.
 
 One control root can manage multiple named Twoman instances. Each instance gets
 its own state directory, hidden install root, and systemd service, while the
-shared `twoman` launcher and control virtual environment stay global.
+shared `twoman-server` launcher and control virtual environment stay global.
 
 ## Requirements
 
@@ -171,7 +171,7 @@ The installer checks the public host and ranks backends in this order:
 
 If multiple backends are available, the highest-ranked one is suggested as the
 default. The detected capabilities are stored in the install state and can be
-reviewed later from the TUI.
+reviewed later from `twoman-server` commands.
 
 ## After install
 
@@ -179,11 +179,11 @@ The installer prints:
 
 - the deployed broker URL
 - the hidden-agent service name
-- the Twoman import text for Android and desktop clients
+- the Twoman import text for Android, Windows desktop, and Linux CLI clients
 
 It also installs:
 
-- launcher: `/usr/local/bin/twoman`
+- launcher: `/usr/local/bin/twoman-server`
 - registry: `/opt/twoman/control/instances.json`
 - state file: `/opt/twoman/control/instances/<name>/install-state.json`
 - import text: `/opt/twoman/control/instances/<name>/profile-share.txt`
@@ -193,43 +193,25 @@ It also installs:
 Run:
 
 ```bash
-sudo twoman
+sudo twoman-server
 ```
 
 That prints the selected instance, broker URL, hidden service, routes, and the
 most common commands. This keeps the default command safe in SSH and
 non-interactive terminals.
 
-Open the Textual TUI explicitly when you want the interactive server console:
+Management commands:
 
 ```bash
-sudo twoman tui
-```
-
-The TUI exposes:
-
-- health verification
-- hidden-agent restart
-- optional WireProxy restart when the hidden route uses WARP
-- watchdog run
-- public-host redeploy
-- capability review
-- client import text display
-- recent hidden-agent logs
-- reconfigure by re-running the installer against the saved state
-
-Non-interactive commands are also available:
-
-```bash
-sudo twoman list
-sudo twoman set-default node
-sudo twoman status
-sudo twoman logs
-sudo twoman --instance bridge config
-sudo twoman restart
-sudo twoman restart-upstream-proxy
-sudo twoman run-watchdog
-sudo twoman redeploy-host
+sudo twoman-server list
+sudo twoman-server set-default node
+sudo twoman-server status
+sudo twoman-server logs
+sudo twoman-server --instance bridge config
+sudo twoman-server restart
+sudo twoman-server restart-upstream-proxy
+sudo twoman-server run-watchdog
+sudo twoman-server redeploy-host
 ```
 
 Use `--instance <name>` with the operational commands whenever you want to
@@ -239,9 +221,8 @@ target a non-default tunnel.
 
 - Use [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md) only when you need to
   inspect or override each deployment stage directly.
-- The hidden agent is installed into a dedicated Python virtual environment
-  under the install root so the Linux instance does not depend on system
-  `site-packages`.
+- Server management is CLI-only. The old interactive management UI is no
+  longer a supported surface.
 - The installer saves the cPanel credentials in the root-only state file
   because host redeploy and reconfigure actions need them later.
 - If the public host cannot be reached from the Linux machine, capability

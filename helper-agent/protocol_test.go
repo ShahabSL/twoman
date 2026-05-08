@@ -40,12 +40,12 @@ func TestFrameDecoderAcceptsFrameAtLimit(t *testing.T) {
 }
 
 func TestOpenPayloadCarriesOptionalTargetAgent(t *testing.T) {
-	payload := makeOpenPayload("example.com", 443, "agent-nima")
+	payload := makeOpenPayload("example.com", 443, "agent-alt")
 	host, port, target, err := parseOpenPayloadWithTarget(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if host != "example.com" || port != 443 || target != "agent-nima" {
+	if host != "example.com" || port != 443 || target != "agent-alt" {
 		t.Fatalf("unexpected open payload: host=%q port=%d target=%q", host, port, target)
 	}
 }

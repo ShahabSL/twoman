@@ -1,6 +1,6 @@
 # Client CLI
 
-`twoman` is the lightweight, non-TUI Linux client for Twoman.
+`twoman` is the lightweight headless Linux client for Twoman.
 
 It uses the same `twoman://profile?data=...` import text as Android and the
 desktop app, then starts the Go helper in headless mode and prints the local
@@ -83,10 +83,29 @@ Inspect logs and generated runtime config:
 
 ```bash
 twoman logs
+twoman logs export --output ~/twoman-diagnostics
 twoman config
 ```
 
-`twoman config` redacts the client token by default.
+`twoman logs` reads the helper log file. For older service installs that only
+wrote to journald, it falls back to `journalctl --user -u twoman-client`.
+`twoman logs export` creates a timestamped diagnostics directory containing
+recent helper logs, service journal lines, runtime state, service unit metadata,
+and redacted profiles/config. It is the preferred command to ask users for when
+debugging disconnects. `twoman config` redacts the client token by default.
+
+Manage imported profiles:
+
+```bash
+twoman profiles
+twoman profiles default "Profile Name"
+twoman profiles delete "Profile Name"
+twoman profiles delete --force "Profile Name"
+```
+
+Profile deletion refuses to remove the currently running profile unless
+`--force` is passed. The safer normal flow is `twoman disconnect` first, then
+delete the profile.
 
 Stop:
 
@@ -141,13 +160,13 @@ The command auto-discovers `twoman-helper-agent` next to itself, in
 
 - The CLI is for local client proxy control, not hidden-agent server
   management.
-- Hidden-agent server management remains under `sudo twoman verify`,
-  `sudo twoman logs`, `sudo twoman tui`, and the other server-side `twoman`
-  subcommands.
+- Hidden-agent server management uses the separate `twoman-server` command, for
+  example `sudo twoman-server status`, `sudo twoman-server logs`, and
+  `sudo twoman-server config`.
 - The CLI does not enable a system proxy or VPN. It exposes local HTTP and
   SOCKS5 endpoints for apps that can use proxy settings.
 - Profiles may include `targetAgentPeerLabel` for advanced multi-exit setups.
   Leave it empty for broker-selected automatic failover. Set it to a live agent
-  label such as `agent-main` or `agent-nima` to force that profile through a
+  label such as `agent-main` or `agent-eu` to force that profile through a
   specific hidden exit; if that agent is unavailable, the connection fails
   clearly instead of silently falling back.
