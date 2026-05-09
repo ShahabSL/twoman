@@ -2,8 +2,14 @@
 set -euo pipefail
 
 TWOMAN_REPO_URL="${TWOMAN_REPO_URL:-https://github.com/ShahabSL/twoman}"
-TWOMAN_REPO_REF="${TWOMAN_REPO_REF:-main}"
+TWOMAN_REPO_REF_FROM_ENV="${TWOMAN_REPO_REF:-}"
+TWOMAN_REPO_REF="${TWOMAN_REPO_REF_FROM_ENV:-main}"
 TWOMAN_INSTALL_VERSION="${TWOMAN_INSTALL_VERSION:-}"
+TWOMAN_REPO_REF_EXPLICIT=0
+if [ -n "${TWOMAN_REPO_REF_FROM_ENV}" ]; then
+  TWOMAN_REPO_REF_EXPLICIT=1
+fi
+TWOMAN_REPO_ARCHIVE_URL_FROM_ENV="${TWOMAN_REPO_ARCHIVE_URL:-}"
 PASSTHROUGH_ARGS=()
 
 usage() {
@@ -43,10 +49,12 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       TWOMAN_REPO_REF="$2"
+      TWOMAN_REPO_REF_EXPLICIT=1
       shift 2
       ;;
     --ref=*)
       TWOMAN_REPO_REF="${1#--ref=}"
+      TWOMAN_REPO_REF_EXPLICIT=1
       shift
       ;;
     -h|--help)
@@ -60,15 +68,17 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ -n "${TWOMAN_INSTALL_VERSION}" ]; then
+if [ -n "${TWOMAN_REPO_ARCHIVE_URL_FROM_ENV}" ]; then
+  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL_FROM_ENV}"
+elif [ -n "${TWOMAN_INSTALL_VERSION}" ]; then
   if [[ "${TWOMAN_INSTALL_VERSION}" == v* ]]; then
     TWOMAN_REPO_REF="${TWOMAN_INSTALL_VERSION}"
   else
     TWOMAN_REPO_REF="v${TWOMAN_INSTALL_VERSION}"
   fi
-  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL:-${TWOMAN_REPO_URL}/archive/refs/tags/${TWOMAN_REPO_REF}.tar.gz}"
+  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_URL}/archive/refs/tags/${TWOMAN_REPO_REF}.tar.gz"
 else
-  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL:-${TWOMAN_REPO_URL}/archive/refs/heads/${TWOMAN_REPO_REF}.tar.gz}"
+  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_URL}/archive/refs/heads/${TWOMAN_REPO_REF}.tar.gz"
 fi
 
 SCRIPT_DIR=""
@@ -117,7 +127,7 @@ create_bootstrap_venv() {
   printf '%s\n' "${venv_root}"
 }
 
-if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/../twoman_control/cli.py" ]; then
+if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/../twoman_control/cli.py" ] && [ -z "${TWOMAN_INSTALL_VERSION}" ] && [ "${TWOMAN_REPO_REF_EXPLICIT}" -eq 0 ] && [ -z "${TWOMAN_REPO_ARCHIVE_URL_FROM_ENV}" ]; then
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 else
   mkdir -p "${BOOTSTRAP_ROOT}/repo"
