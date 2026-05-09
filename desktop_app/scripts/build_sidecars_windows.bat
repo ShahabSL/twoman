@@ -10,6 +10,22 @@ set TUNNEL_DIR=%BUILD_ROOT%\tunnel
 if "%TWOMAN_HELPER_BINARY_BASENAME%"=="" set TWOMAN_HELPER_BINARY_BASENAME=twoman-helper
 if "%TWOMAN_GATEWAY_BINARY_BASENAME%"=="" set TWOMAN_GATEWAY_BINARY_BASENAME=twoman-gateway
 if "%TWOMAN_TUNNEL_BINARY_BASENAME%"=="" set TWOMAN_TUNNEL_BINARY_BASENAME=twoman-tunnel
+if "%TWOMAN_PRODUCT_VERSION%"=="" (
+  for /f "usebackq delims=" %%v in ("%ROOT%\VERSION") do (
+    set TWOMAN_PRODUCT_VERSION=%%v
+    goto :twoman_version_read
+  )
+)
+:twoman_version_read
+if "%TWOMAN_PRODUCT_VERSION%"=="" set TWOMAN_PRODUCT_VERSION=dev
+if "%TWOMAN_BUILD_COMMIT%"=="" (
+  for /f %%c in ('git -C "%ROOT%" rev-parse --short=12 HEAD 2^>nul') do set TWOMAN_BUILD_COMMIT=%%c
+)
+if "%TWOMAN_BUILD_COMMIT%"=="" set TWOMAN_BUILD_COMMIT=unknown
+if "%TWOMAN_BUILD_TIME%"=="" (
+  for /f %%t in ('powershell -NoProfile -Command "Get-Date -AsUTC -Format yyyy-MM-ddTHH:mm:ssZ"') do set TWOMAN_BUILD_TIME=%%t
+)
+if "%TWOMAN_BUILD_TIME%"=="" set TWOMAN_BUILD_TIME=unknown
 
 if exist "%BUILD_ROOT%" rmdir /s /q "%BUILD_ROOT%"
 mkdir "%BUILD_ROOT%"
@@ -34,7 +50,7 @@ if not "%TWOMAN_PREBUILT_HELPER_EXE%"=="" (
     )
   ) else (
     pushd "%ROOT%\helper-agent"
-    go build -trimpath -ldflags "-s -w" -o "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" .
+    go build -trimpath -ldflags "-s -w -X main.version=%TWOMAN_PRODUCT_VERSION% -X main.commit=%TWOMAN_BUILD_COMMIT% -X main.buildTime=%TWOMAN_BUILD_TIME%" -o "%DIST_DIR%\%TWOMAN_HELPER_BINARY_BASENAME%.exe" .
     if errorlevel 1 exit /b 1
     popd
   )

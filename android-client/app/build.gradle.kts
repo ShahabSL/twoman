@@ -1,3 +1,5 @@
+import java.io.ByteArrayOutputStream
+import java.time.Instant
 import java.util.Properties
 
 plugins {
@@ -10,11 +12,28 @@ fun quoteForGradle(value: String): String =
 
 val repoRoot = layout.projectDirectory.dir("../..")
 val generatedGoJniLibsDir = layout.buildDirectory.dir("generated/twoman-go-helper/jniLibs")
+
+fun commandOutput(vararg command: String): String {
+    val stdout = ByteArrayOutputStream()
+    val stderr = ByteArrayOutputStream()
+    val result = exec {
+        commandLine(*command)
+        standardOutput = stdout
+        errorOutput = stderr
+        isIgnoreExitValue = true
+    }
+    return if (result.exitValue == 0) stdout.toString().trim() else ""
+}
+
 val twomanProductVersion = providers.environmentVariable("TWOMAN_VERSION")
     .orElse(repoRoot.file("VERSION").asFile.readText().trim())
     .get()
-val twomanBuildCommit = providers.environmentVariable("TWOMAN_BUILD_COMMIT").orElse("unknown").get()
-val twomanBuildTime = providers.environmentVariable("TWOMAN_BUILD_TIME").orElse("unknown").get()
+val twomanBuildCommit = providers.environmentVariable("TWOMAN_BUILD_COMMIT")
+    .orElse(commandOutput("git", "-C", repoRoot.asFile.absolutePath, "rev-parse", "--short=12", "HEAD").ifBlank { "unknown" })
+    .get()
+val twomanBuildTime = providers.environmentVariable("TWOMAN_BUILD_TIME")
+    .orElse(Instant.now().toString())
+    .get()
 val twomanGoLdflags =
     "-s -w -X main.version=$twomanProductVersion -X main.commit=$twomanBuildCommit -X main.buildTime=$twomanBuildTime"
 
