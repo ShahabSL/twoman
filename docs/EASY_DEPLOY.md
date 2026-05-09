@@ -129,9 +129,21 @@ From GitHub directly:
 curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash
 ```
 
+Install a specific release tag when you need a reproducible install or rollback:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash -s -- --version 1.0.7
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash -s -- --version 1.0.6
+```
+
+`--version` accepts release numbers with or without a leading `v`. The
+bootstrap script downloads that release's control bundle, then runs the normal
+installer from the versioned code.
+
 The bootstrap script forwards extra flags to
-`python -m twoman_control.cli install`, so you can keep using the same entry
-point for both interactive and scripted installs.
+`python -m twoman_control.cli install`, after consuming bootstrap-only flags
+such as `--version` and `--ref`. You can keep using the same entry point for
+interactive, scripted, and version-pinned installs.
 
 ## Non-interactive install
 

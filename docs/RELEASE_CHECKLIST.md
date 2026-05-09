@@ -2,6 +2,7 @@
 
 - Verify the fast installer path still works:
   - `scripts/install_twoman.sh`
+  - `scripts/install_twoman.sh --version <release>`
   - `sudo twoman-server`
   - `sudo twoman-server status`
   - `sudo twoman-server config`
@@ -11,6 +12,7 @@
   - `dist/client-cli/twoman-linux-amd64/twoman version`
   - `dist/client-cli/twoman-linux-amd64/twoman-helper-agent --version`
   - `client-cli/install-linux.sh --help`
+  - `client-cli/install-linux.sh --version <release> --prefix "$(mktemp -d)/usr"`
   - `dist/client-cli/twoman-linux-amd64/twoman connect` without `--helper-bin` in an E2E test
 - Verify the server-control bundle version:
   - `python -m twoman_control.cli version`

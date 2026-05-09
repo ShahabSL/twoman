@@ -6,13 +6,22 @@ It uses the same `twoman://profile?data=...` import text as Android and the
 desktop app, then starts the Go helper in headless mode and prints the local
 SOCKS5 and HTTP proxy endpoints.
 
-## Install From A Release Bundle
+## Install From A Release
 
 Install a specific released version directly from GitHub:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/client-cli/install-linux.sh | sudo bash -s -- --version 1.0.7
 ```
+
+Install an older release by changing the version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/client-cli/install-linux.sh | sudo bash -s -- --version 1.0.6
+```
+
+`--version` accepts release numbers with or without a leading `v` and installs
+the matching `twoman-cli-linux-amd64-v<version>.tar.gz` release asset.
 
 Or install offline from a downloaded artifact:
 

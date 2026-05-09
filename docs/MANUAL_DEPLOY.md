@@ -234,6 +234,14 @@ twoman service install
 twoman status
 ```
 
+For release installs, prefer the versioned installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/client-cli/install-linux.sh | sudo bash -s -- --version 1.0.7
+```
+
+Change `1.0.7` to any published release when testing or rolling back.
+
 Use `twoman logs export --output DIR` for support bundles. The legacy
 foreground helper launcher has been removed so Linux has one maintained client
 surface.

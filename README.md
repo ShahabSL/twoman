@@ -52,6 +52,13 @@ From GitHub directly:
 curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash
 ```
 
+Install a specific release, including an older release for rollback:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash -s -- --version 1.0.7
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash -s -- --version 1.0.6
+```
+
 Fully unattended installs are also supported through `twoman-server install` flags
 after bootstrap. See [docs/EASY_DEPLOY.md](docs/EASY_DEPLOY.md) for the
 non-interactive example.
@@ -114,6 +121,9 @@ twoman service install
 twoman status
 ```
 
+Replace `1.0.7` with any published release, such as `1.0.6`, when you need to
+install an older client for rollback or compatibility testing.
+
 Offline install from a downloaded release artifact:
 
 ```bash
@@ -162,15 +172,13 @@ Recommended use:
 
 This repository contains the current public implementation.
 
-What it is good at:
-- Telegram and other lighter interactive traffic
-- SOCKS5 and HTTP proxy access through a localhost helper
-- shared-host deployments where the public host must remain in-path
-- managed-host deployments where a real Node app runtime is available
-
-What it is not:
-- a full-speed VPN replacement
-- a general-purpose high-throughput tunnel on hostile shared hosting
+Design boundaries:
+- the public host stays in the path by design; use a direct relay when that
+  camouflage/topology requirement does not apply
+- clients do not hardcode throughput knobs; helpers follow broker health,
+  server-side transport profiles, and adaptive upload settings where enabled
+- Linux users should use the `twoman` CLI for client management and
+  `twoman-server` for hidden-server management
 
 ## Documentation
 
@@ -179,7 +187,7 @@ Start here:
 - [docs/EASY_DEPLOY.md](docs/EASY_DEPLOY.md): one-command Linux install, optional WARP route, `twoman-server` management command
 - [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md): repo-level host, hidden-server, and helper deployment
 - [docs/BACKENDS.md](docs/BACKENDS.md): backend families and when each one fits
-- [docs/PERFORMANCE.md](docs/PERFORMANCE.md): current stable managed-host profile and benchmark limits
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md): benchmark method, adaptive upload behavior, and tuning rules
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): runtime layout, lanes, and broker behavior
 - [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md): release validation and packaging checklist
 - [docs/releases/](docs/releases): versioned release notes

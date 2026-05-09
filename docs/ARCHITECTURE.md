@@ -91,7 +91,8 @@ Twoman is intentionally shaped around shared-host reality:
 - Passenger/shared hosts are safer with bounded polling responses
 - managed Node runtimes can sustain lower-churn long-lived transports
 - binary lane traffic defaults to `image/webp` so intermediaries see a standard media type
-- larger uploads and larger browser workloads are the practical ceiling
+- upload worker counts, batch sizes, and downlink parallelism are broker
+  capabilities so deployments can be tuned without client-side hardcoding
 
 ## DNS
 
@@ -116,9 +117,11 @@ same public camouflage surface.
 
 ## Production Reality
 
-Twoman is best suited for:
-- Telegram
-- lighter browsing
-- constrained relay scenarios where “host must stay in path” is more important than maximum throughput
+Twoman is for host-preserving relay deployments. The public host stays in-band
+for topology and camouflage reasons, while the Go dataplane, broker-advertised
+profiles, and adaptive upload controls are used to extract the best validated
+performance from that topology.
 
-It is not a substitute for a direct tunnel or a VPS-based relay.
+If a deployment does not need the public host in the traffic path, benchmark a
+direct relay architecture separately instead of mixing that requirement into
+Twoman's transport model.

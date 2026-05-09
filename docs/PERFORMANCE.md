@@ -1,75 +1,33 @@
 # Performance Notes
 
-This document records the best currently proven managed-host profile and the
-limits observed during live probes. It is operational guidance, not a promise
-that every host or network will reproduce the same numbers.
+This document explains how Twoman selects and validates fast public-host
+profiles. Treat it as an operating method, not a universal throughput promise:
+the public host, hidden server route, client network, and selected backend all
+affect the final number.
 
-## Current Stable Managed-Host Profile
+## Current Release Behavior
 
-The current stable profile for the audited `/parvaneh` CloudLinux Node selector
-deployment is:
+- Helpers and hidden agents default to `transport_profile: auto`.
+- The broker advertises its active profile, route templates, batch limits,
+  down-lane parallelism, cipher suite, and version metadata from authenticated
+  health.
+- Clients do not pin worker counts or batch sizes in connection strings.
+- Managed Node deployments use the broker-advertised `managed_host_http`
+  profile unless the broker and route prove another profile is available.
+- Data uploads use bounded POST batches with multipart-shaped bodies.
+- Data downlinks use bounded concurrent polls on the managed HTTP profile.
+- Adaptive upload is a server-side/runtime setting, not a client UX setting.
 
-- public backend: `cloudlinux_node_selector`
-- broker profile: `managed_host_http`
-- helper data upload workers: `32`
-- agent data upload workers: `8`
-- helper and agent data upload batch: `524288` bytes
-- helper and agent data flush delay: `0.006` seconds
-- helper and agent data down parallelism: `4`
-- broker bulk lane batch: `4194304` bytes
-- upload body camouflage: `multipart`
-- public data routes: `/media/upload` and `/media/download`
+The current managed-host profile uses larger Go batches and multiple bounded
+data workers so normal client traffic can fill the available path without
+manual local tuning. Operators should change these values through deploy
+configuration and broker health, then validate with stress tests.
 
-Helpers and agents should normally keep `transport_profile: auto` and avoid
-pinning these numbers in client configs. The broker advertises the active
-profile from `/health`, so server-side tuning can move without rebuilding
-clients.
-
-Adaptive upload scheduling is available but intentionally opt-in. It starts
-from the configured worker and batch floor, increases only while the data lane
-is backlogged or filling batches, and backs down on upload errors. Keep it
-disabled for release defaults until a live host/server pair proves it is better
-than the fixed advertised profile.
-
-## Live Benchmark Results
-
-Latest stable direct-server benchmark artifact:
-`output/twoman-direct-stable-candidate-20260507T143900Z.json`
-
-Measured on `2026-05-07` against the managed host deployment path:
-
-- tunnel download, 1 concurrent 100 MB download: `30.81 Mbps`
-- tunnel download, 4 concurrent 100 MB downloads: `51.30 Mbps`
-- tunnel download, 8 concurrent 100 MB downloads: not stable, `7/8` completed
-- tunnel upload, 1 concurrent 25 MB upload: `29.48 Mbps`
-- tunnel upload, 4 concurrent 25 MB uploads: `49.37 Mbps`
-- tunnel upload, 8 concurrent 25 MB uploads: `49.07 Mbps`
-
-The best aggressive download-only artifact is:
-`output/twoman-direct-absolute-aggregate-20260507T133821Z.json`
-
-That profile reached `79.74 Mbps` at 8 concurrent 100 MB downloads, but it was
-not kept as the default because repeated stress later showed stalls and upload
-instability.
-
-## Host Ceiling Findings
-
-Raw host ingress was pushed independently of the full tunnel:
-
-- Direct server to host, 5 MB uploads: best burst was about `73.99 Mbps` at 32
-  concurrent uploads; higher concurrency started failing.
-- Local machine to host, 5 MB uploads: best burst was about `54.35 Mbps` at 64
-  concurrent uploads; 96 concurrent uploads failed.
-
-These probes are why the stable tunnel profile is intentionally below the most
-aggressive burst result. On this single cPanel Node app, more concurrency helps
-until the host runtime starts resetting, timing out, or returning errors.
-
-## Adaptive Upload Scheduling
+## Adaptive Upload
 
 Runtime config key: `adaptive_upload`.
 
-Deploy scripts expose the same feature through:
+Deploy scripts expose:
 
 - `TWOMAN_ADAPTIVE_UPLOAD_ENABLED`
 - `TWOMAN_ADAPTIVE_UPLOAD_MIN_WORKERS`
@@ -81,36 +39,61 @@ Deploy scripts expose the same feature through:
 - `TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS`
 - `TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES`
 - `TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS`
+- `TWOMAN_ADAPTIVE_UPLOAD_ERROR_COOLDOWN_SECONDS`
 
-This is not a substitute for broker-advertised profiles. Use it for measured
-host/server pairs where the best fixed worker count changes with live network
-conditions.
+Adaptive upload starts from the configured floor, increases only when the data
+lane has enough backlog or fills batches, and backs down after upload errors.
+The error cooldown prevents immediate re-ramp after host-side resets. Enable it
+per deployment when live tests show that the host/server pair benefits from
+adaptive scheduling.
 
-Latest adaptive check on `2026-05-07`:
+## Validation Method
 
-- WARP-routed server, fixed profile:
-  `19.24 Mbps` download and `9.25 Mbps` upload.
-- WARP-routed server, adaptive profile:
-  `18.00 Mbps` download and `7.37 Mbps` upload.
-- Direct server, fixed profile:
-  `13.10 Mbps` download and `7.88 Mbps` upload.
-- Direct server, adaptive profile:
-  `18.40 Mbps` download and `8.37 Mbps` upload.
+Benchmark every release or deployment profile with the same metadata:
 
-Decision: keep the fixed advertised profile as the default. Adaptive scheduling
-is a useful tuning tool and may help direct-host paths like Toork, but the WARP
-path regressed in the same benchmark, so it should not be enabled globally.
+- Twoman version, git commit, and release asset name.
+- Broker base URL and backend family.
+- Hidden-server route, including whether host reachability uses WARP/WireProxy.
+- Cipher suite and broker-advertised transport profile.
+- Client platform and helper version.
+- Concurrent stream count, object size, duration, and error count.
 
-## Interpretation
+Recommended test groups:
 
-The current single-host HTTP architecture is tuned close to the stable ceiling
-observed on the audited host. To move materially beyond this class of numbers,
-the next architecture candidates are:
+- Broker health and camouflage checks.
+- Raw host upload probes for the selected backend.
+- Single-stream download and upload.
+- Multi-stream download and upload.
+- Multi-client stress with separate helper peer IDs.
+- Long-running reconnect tests with logs and broker session counts.
 
-- a Go WebSocket transport, since the host front door accepted WebSocket
-  upgrades during probing
-- multiple independent host apps or hosts for striping
-- a different provider or edge runtime with higher sustained request ingress
+Use the live benchmark scripts under `scripts/` for repeatable path probes and
+`tests/run_client_cli_e2e.sh` for local Linux CLI regression coverage.
 
-Those are architecture changes. They should be benchmarked separately instead
-of being mixed into the stable HTTP profile.
+## Tuning Rules
+
+- Prefer broker-advertised profiles over client-side hardcoding.
+- Tune one deployment variable at a time and record the exact release/version.
+- Raise upload workers only when the host accepts the extra concurrency without
+  resets, EOFs, or rising reconnects.
+- Increase batch size only when latency remains acceptable for interactive
+  traffic.
+- Keep control traffic small and isolated from bulk data.
+- Treat WebSocket as a separate profile that must be proven by real broker
+  health, upgrade probes, and end-to-end tests.
+- Keep the public host in path for Twoman deployments; if that requirement is
+  removed, benchmark a different architecture instead of calling it Twoman
+  performance.
+
+## Release Gate
+
+A release is performance-ready when:
+
+- the Linux CLI, Android, and Windows clients launch the same versioned helper
+  and report nonzero local ports where applicable;
+- authenticated broker health reports the expected product version and profile;
+- multi-client stress completes without peer replacement, session leaks, or
+  repeated reconnects;
+- representative upload and download benchmarks complete without host reset
+  patterns; and
+- diagnostics can be exported with redacted logs for support.

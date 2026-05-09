@@ -90,12 +90,12 @@ Current status:
 - the advertised `managed_host_http` helper profile now keeps
   `down_parallelism.data=4` so bounded helper polls can reopen while
   the first is draining
-- the current best stable audited profile uses helper data upload workers
-  `32`, agent data upload workers `8`, `512 KiB` data upload batches, `6 ms`
-  data flush delay, and a `4 MiB` broker bulk lane batch
-- Go helper/agent runtimes also support opt-in adaptive upload scheduling for
-  measured deployments where live host capacity changes; release defaults stay
-  fixed until benchmarks prove adaptive is better on that host/server pair
+- the broker advertises the managed HTTP upload worker counts, data batch
+  sizes, data flush delay, downlink parallelism, and broker bulk lane sizing
+  used by helpers and agents at runtime
+- Go helper/agent runtimes support adaptive upload scheduling with an error
+  cooldown for measured deployments where live host capacity changes; enable
+  it per deployment after benchmarking instead of hardcoding client profiles
 - helper and agent probe WebSocket mode only when the host advertises it and no
   hidden-side upstream proxy such as WARP is configured
 - reason: on the audited cPanel front-end, long-lived helper data streams were
