@@ -571,6 +571,7 @@ class MainActivity : AppCompatActivity() {
         val baseProfile = importedProfile ?: existing
         val profile = ClientProfile(
             id = existing?.id ?: java.util.UUID.randomUUID().toString(),
+            helperPeerId = baseProfile?.helperPeerId?.takeIf { it.isNotBlank() } ?: newAndroidHelperPeerId(),
             name = name,
             brokerBaseUrl = broker,
             clientToken = token,

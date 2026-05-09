@@ -17,9 +17,14 @@ import (
 func main() {
 	configPath := flag.String("config", "", "path to config JSON file")
 	mode := flag.String("mode", "helper", "run as 'helper' or 'agent'")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(versionText())
+		return
+	}
 	if *configPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: twoman --config <path> [--mode helper|agent]")
+		fmt.Fprintln(os.Stderr, "usage: twoman-helper-agent --config <path> [--mode helper|agent]")
 		os.Exit(1)
 	}
 
@@ -33,6 +38,7 @@ func main() {
 	if err := configureAndroidNetwork(cfg.AndroidNetworkHandle); err != nil {
 		log.Fatalf("android network bind: %v", err)
 	}
+	log.Printf("%s", versionText())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

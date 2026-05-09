@@ -10,6 +10,13 @@ fun quoteForGradle(value: String): String =
 
 val repoRoot = layout.projectDirectory.dir("../..")
 val generatedGoJniLibsDir = layout.buildDirectory.dir("generated/twoman-go-helper/jniLibs")
+val twomanProductVersion = providers.environmentVariable("TWOMAN_VERSION")
+    .orElse(repoRoot.file("VERSION").asFile.readText().trim())
+    .get()
+val twomanBuildCommit = providers.environmentVariable("TWOMAN_BUILD_COMMIT").orElse("unknown").get()
+val twomanBuildTime = providers.environmentVariable("TWOMAN_BUILD_TIME").orElse("unknown").get()
+val twomanGoLdflags =
+    "-s -w -X main.version=$twomanProductVersion -X main.commit=$twomanBuildCommit -X main.buildTime=$twomanBuildTime"
 
 fun localProperties(): Properties {
     val properties = Properties()
@@ -76,7 +83,7 @@ val buildTwomanGoHelper = tasks.register("buildTwomanGoHelper") {
                     "build",
                     "-trimpath",
                     "-ldflags",
-                    "-s -w",
+                    twomanGoLdflags,
                     "-o",
                     outFile.absolutePath,
                     ".",
@@ -110,8 +117,10 @@ android {
         applicationId = "com.twoman.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.0.6"
+        versionCode = 20
+        versionName = twomanProductVersion
+        buildConfigField("String", "TWOMAN_VERSION", quoteForGradle(twomanProductVersion))
+        buildConfigField("String", "TWOMAN_BUILD_COMMIT", quoteForGradle(twomanBuildCommit))
         buildConfigField("String", "RUNTIME_LOG_TAG", quoteForGradle(androidLogTag))
         buildConfigField("String", "VPN_SESSION_NAME", quoteForGradle(androidVpnSessionName))
         resValue("string", "runtime_app_name", quoteForGradle(androidAppLabel))

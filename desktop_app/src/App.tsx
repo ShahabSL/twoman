@@ -64,8 +64,10 @@ type ShareDialogState =
   | { open: true; mode: "create" | "edit"; draft: SharedProxy };
 
 function blankProfile(): ClientProfile {
+  const id = crypto.randomUUID();
   return {
-    id: crypto.randomUUID(),
+    id,
+    helperPeerId: `twoman-desktop-${id}`,
     name: "",
     brokerBaseUrl: "",
     clientToken: "",

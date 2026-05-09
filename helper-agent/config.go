@@ -108,6 +108,7 @@ type AdaptiveUploadConfig struct {
 	DecreaseAfterErrors     int      `json:"decrease_after_errors"`
 	BacklogThresholdFrames  int      `json:"backlog_threshold_frames"`
 	DecisionIntervalSeconds float64  `json:"decision_interval_seconds"`
+	ErrorCooldownSeconds    float64  `json:"error_cooldown_seconds"`
 }
 
 func (c *Config) UnmarshalJSON(data []byte) error {

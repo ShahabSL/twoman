@@ -108,7 +108,16 @@ Windows desktop:
 Headless Linux:
 
 ```bash
-tar -xzf twoman-cli-linux-amd64.tar.gz
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/client-cli/install-linux.sh | sudo bash -s -- --version 1.0.7
+twoman import 'twoman://profile?data=...'
+twoman service install
+twoman status
+```
+
+Offline install from a downloaded release artifact:
+
+```bash
+tar -xzf twoman-cli-linux-amd64-v1.0.7.tar.gz
 cd twoman-linux-amd64
 sudo ./install.sh
 twoman import 'twoman://profile?data=...'

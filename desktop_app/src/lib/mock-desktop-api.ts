@@ -11,6 +11,7 @@ import type {
 function makeProfile(partial: Partial<ClientProfile> & Pick<ClientProfile, "id" | "name">): ClientProfile {
   return {
     id: partial.id,
+    helperPeerId: partial.helperPeerId ?? `twoman-desktop-${partial.id}`,
     name: partial.name,
     brokerBaseUrl: partial.brokerBaseUrl ?? "https://broker.example.net/connect",
     clientToken: partial.clientToken ?? "demo-token",

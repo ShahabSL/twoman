@@ -8,8 +8,16 @@ SOCKS5 and HTTP proxy endpoints.
 
 ## Install From A Release Bundle
 
+Install a specific released version directly from GitHub:
+
 ```bash
-tar -xzf twoman-cli-linux-amd64.tar.gz
+curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/client-cli/install-linux.sh | sudo bash -s -- --version 1.0.7
+```
+
+Or install offline from a downloaded artifact:
+
+```bash
+tar -xzf twoman-cli-linux-amd64-v1.0.7.tar.gz
 cd twoman-linux-amd64
 sudo ./install.sh
 ```
@@ -20,6 +28,12 @@ The installer places:
 - `twoman-helper-agent` in `/usr/local/lib/twoman`
 
 After that, users never need to pass a helper path.
+Check the installed client and helper versions with:
+
+```bash
+twoman version
+twoman-helper-agent --version
+```
 
 ## Use
 

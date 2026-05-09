@@ -52,8 +52,10 @@ export function importProfileShare(rawText: string): ClientProfile {
       ? trimmed
       : decodeBase64Url(trimmed);
   const payload = JSON.parse(payloadText) as Partial<ClientProfile>;
+  const id = crypto.randomUUID();
   return {
-    id: crypto.randomUUID(),
+    id,
+    helperPeerId: `twoman-desktop-${id}`,
     name: payload.name?.trim() || "Imported profile",
     brokerBaseUrl: payload.brokerBaseUrl?.trim() || "",
     clientToken: payload.clientToken?.trim() || "",

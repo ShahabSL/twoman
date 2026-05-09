@@ -48,6 +48,7 @@ TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES="${TWOMAN_ADAPTIVE_UPLOAD_INCREA
 TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS="${TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS:-1}"
 TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES="${TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES:-128}"
 TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS="${TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS:-2}"
+TWOMAN_ADAPTIVE_UPLOAD_ERROR_COOLDOWN_SECONDS="${TWOMAN_ADAPTIVE_UPLOAD_ERROR_COOLDOWN_SECONDS:-5}"
 TWOMAN_PURGE_CONFLICTING_AGENT_UNITS="${TWOMAN_PURGE_CONFLICTING_AGENT_UNITS:-true}"
 TWOMAN_MAX_FRAME_PAYLOAD_BYTES="${TWOMAN_MAX_FRAME_PAYLOAD_BYTES:-2097152}"
 TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS="${TWOMAN_SEND_QUEUE_TIMEOUT_SECONDS:-5}"
@@ -71,6 +72,10 @@ fi
 TWOMAN_HEALTH_TEMPLATE="${TWOMAN_HEALTH_TEMPLATE:-/health}"
 TWOMAN_AGENT_SERVICE_USER="${TWOMAN_AGENT_SERVICE_USER:-twoman}"
 TWOMAN_AGENT_SERVICE_GROUP="${TWOMAN_AGENT_SERVICE_GROUP:-twoman}"
+TWOMAN_PRODUCT_VERSION="${TWOMAN_PRODUCT_VERSION:-$(cat VERSION 2>/dev/null || printf dev)}"
+TWOMAN_BUILD_COMMIT="${TWOMAN_BUILD_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+TWOMAN_BUILD_TIME="${TWOMAN_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+GO_LDFLAGS="-s -w -X main.version=${TWOMAN_PRODUCT_VERSION} -X main.commit=${TWOMAN_BUILD_COMMIT} -X main.buildTime=${TWOMAN_BUILD_TIME}"
 
 TMP_GO_BIN=""
 cleanup() {
@@ -184,7 +189,7 @@ build_go_agent_binary() {
   fi
   TMP_GO_BIN="$(mktemp)"
   echo "Building Go hidden-agent runtime for linux/${goarch}..."
-  (cd helper-agent && CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "-s -w" -o "${TMP_GO_BIN}" .)
+  (cd helper-agent && CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" go build -trimpath -ldflags "${GO_LDFLAGS}" -o "${TMP_GO_BIN}" .)
 }
 
 build_go_agent_binary
@@ -201,6 +206,9 @@ echo "Uploading agent files..."
 
 CONFIG_JSON="$(cat <<EOF
 {
+  "product_version": "${TWOMAN_PRODUCT_VERSION}",
+  "build_commit": "${TWOMAN_BUILD_COMMIT}",
+  "build_time": "${TWOMAN_BUILD_TIME}",
   "transport": "${TWOMAN_TRANSPORT}",
   "transport_profile": "auto",
   "broker_base_url": "${TWOMAN_BROKER_BASE_URL}",
@@ -253,7 +261,8 @@ CONFIG_JSON="$(cat <<EOF
     "increase_after_successes": ${TWOMAN_ADAPTIVE_UPLOAD_INCREASE_AFTER_SUCCESSES},
     "decrease_after_errors": ${TWOMAN_ADAPTIVE_UPLOAD_DECREASE_AFTER_ERRORS},
     "backlog_threshold_frames": ${TWOMAN_ADAPTIVE_UPLOAD_BACKLOG_THRESHOLD_FRAMES},
-    "decision_interval_seconds": ${TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS}
+    "decision_interval_seconds": ${TWOMAN_ADAPTIVE_UPLOAD_DECISION_INTERVAL_SECONDS},
+    "error_cooldown_seconds": ${TWOMAN_ADAPTIVE_UPLOAD_ERROR_COOLDOWN_SECONDS}
   },
   "streaming_up_lanes": ${STREAMING_UP_JSON},
   "idle_repoll_delay_seconds": {

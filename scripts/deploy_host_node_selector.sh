@@ -136,6 +136,9 @@ TWOMAN_NODE_APP_URI="${TWOMAN_NODE_APP_URI:-/rahkar-node}"
 TWOMAN_NODE_VERSION="${TWOMAN_NODE_VERSION:-20}"
 TWOMAN_NODE_APP_MODE="${TWOMAN_NODE_APP_MODE:-production}"
 TWOMAN_ADMIN_SCRIPT_NAME="${TWOMAN_ADMIN_SCRIPT_NAME:-rahkar_negahban.php}"
+TWOMAN_PRODUCT_VERSION="${TWOMAN_PRODUCT_VERSION:-$(cat VERSION 2>/dev/null || printf dev)}"
+TWOMAN_BUILD_COMMIT="${TWOMAN_BUILD_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+TWOMAN_BUILD_TIME="${TWOMAN_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 TWOMAN_TRACE="${TWOMAN_TRACE:-0}"
 TWOMAN_DEBUG_STATS="${TWOMAN_DEBUG_STATS:-0}"
 TWOMAN_DOWN_WAIT_CTL_MS="${TWOMAN_DOWN_WAIT_CTL_MS:-75}"
@@ -247,6 +250,9 @@ fi
 
 CONFIG_JSON="$(cat <<EOF
 {
+  "product_version": "${TWOMAN_PRODUCT_VERSION}",
+  "build_commit": "${TWOMAN_BUILD_COMMIT}",
+  "build_time": "${TWOMAN_BUILD_TIME}",
   "base_uri": "${TWOMAN_NODE_APP_URI}",
   "upload_body_mode": "${TWOMAN_UPLOAD_BODY_MODE}",
   "camouflage_404_path": "${TWOMAN_CAMOUFLAGE_404_PATH}",

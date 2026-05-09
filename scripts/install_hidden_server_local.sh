@@ -65,6 +65,10 @@ if [ -z "${TWOMAN_ROUTE_TEMPLATE:-}" ]; then
   TWOMAN_ROUTE_TEMPLATE='/{lane}/{direction}'
 fi
 TWOMAN_HEALTH_TEMPLATE="${TWOMAN_HEALTH_TEMPLATE:-/health}"
+TWOMAN_PRODUCT_VERSION="${TWOMAN_PRODUCT_VERSION:-$(cat "${TWOMAN_REPO_ROOT}/VERSION" 2>/dev/null || printf dev)}"
+TWOMAN_BUILD_COMMIT="${TWOMAN_BUILD_COMMIT:-$(git -C "${TWOMAN_REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || printf unknown)}"
+TWOMAN_BUILD_TIME="${TWOMAN_BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+GO_LDFLAGS="-s -w -X main.version=${TWOMAN_PRODUCT_VERSION} -X main.commit=${TWOMAN_BUILD_COMMIT} -X main.buildTime=${TWOMAN_BUILD_TIME}"
 
 STREAMING_UP_JSON="[]"
 if [ -n "${TWOMAN_STREAMING_UP_LANES}" ]; then
@@ -138,11 +142,14 @@ if ! command -v go >/dev/null 2>&1; then
   fi
 fi
 echo "Building Go hidden-agent runtime..."
-(cd "${TWOMAN_REPO_ROOT}/helper-agent" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "${TWOMAN_INSTALL_ROOT}/twoman-helper-agent" .)
+(cd "${TWOMAN_REPO_ROOT}/helper-agent" && CGO_ENABLED=0 go build -trimpath -ldflags "${GO_LDFLAGS}" -o "${TWOMAN_INSTALL_ROOT}/twoman-helper-agent" .)
 chmod 0755 "${TWOMAN_INSTALL_ROOT}/twoman-helper-agent"
 
 CONFIG_JSON="$(cat <<EOF
 {
+  "product_version": "${TWOMAN_PRODUCT_VERSION}",
+  "build_commit": "${TWOMAN_BUILD_COMMIT}",
+  "build_time": "${TWOMAN_BUILD_TIME}",
   "transport": "${TWOMAN_TRANSPORT}",
   "transport_profile": "auto",
   "broker_base_url": "${TWOMAN_BROKER_BASE_URL}",

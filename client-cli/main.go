@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -30,6 +32,7 @@ const (
 
 type profile struct {
 	ID                          string  `json:"id,omitempty"`
+	HelperPeerID                string  `json:"helperPeerId,omitempty"`
 	Name                        string  `json:"name"`
 	BrokerBaseURL               string  `json:"brokerBaseUrl"`
 	ClientToken                 string  `json:"clientToken"`
@@ -122,6 +125,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	switch command {
+	case "version":
+		fmt.Fprintln(stdout, versionText())
+		return nil
 	case "import":
 		return cmdImport(p, remaining[1:], stdout, stderr)
 	case "profiles":
@@ -164,6 +170,7 @@ Usage:
   twoman [--home DIR] profiles delete NAME
   twoman [--home DIR] profiles default NAME
   twoman [--home DIR] config
+  twoman version
 
 The CLI stores profiles locally, starts the Go helper in headless mode, and
 prints the local SOCKS5 and HTTP proxy endpoints.`)
@@ -260,6 +267,17 @@ func cmdImport(p paths, args []string, stdout, stderr io.Writer) error {
 	}
 	store, err := loadProfiles(p)
 	if err != nil {
+		return err
+	}
+	if existing, ok := store.findByName(prof.Name); ok {
+		if strings.TrimSpace(existing.ID) != "" {
+			prof.ID = existing.ID
+		}
+		if strings.TrimSpace(existing.HelperPeerID) != "" {
+			prof.HelperPeerID = existing.HelperPeerID
+		}
+	}
+	if err := ensureProfileHelperPeerID(&prof); err != nil {
 		return err
 	}
 	store.upsert(prof)
@@ -435,6 +453,8 @@ func cmdConnect(p paths, args []string, stdout, stderr io.Writer) error {
 	if *socksPort >= 0 {
 		prof.SOCKSPort = *socksPort
 	}
+	explicitHTTPPort := *httpPort >= 0
+	explicitSOCKSPort := *socksPort >= 0
 	host := strings.TrimSpace(*listenHost)
 	if host == "" {
 		if prof.ShareLANSocks {
@@ -443,14 +463,14 @@ func cmdConnect(p paths, args []string, stdout, stderr io.Writer) error {
 			host = "127.0.0.1"
 		}
 	}
-	if prof.HTTPPort == 0 {
+	if prof.HTTPPort == 0 && !explicitHTTPPort {
 		port, err := reserveFreePort(host)
 		if err != nil {
 			return fmt.Errorf("reserve HTTP port: %w", err)
 		}
 		prof.HTTPPort = port
 	}
-	if prof.SOCKSPort == 0 {
+	if prof.SOCKSPort == 0 && !explicitSOCKSPort {
 		port, err := reserveFreePort(host)
 		if err != nil {
 			return fmt.Errorf("reserve SOCKS port: %w", err)
@@ -853,7 +873,7 @@ func exportDiagnostics(p paths, outputDir string, maxLines int) (string, error) 
 		writeTextDiagnostic(filepath.Join(bundle, "service-journal.error.txt"), err.Error()+"\n")
 	}
 	if exe, err := os.Executable(); err == nil {
-		writeTextDiagnostic(filepath.Join(bundle, "client.txt"), fmt.Sprintf("executable=%s\nversion=local-build\n", exe))
+		writeTextDiagnostic(filepath.Join(bundle, "client.txt"), fmt.Sprintf("executable=%s\n%s\n", exe, versionText()))
 	}
 	return bundle, nil
 }
@@ -1020,7 +1040,11 @@ func parseProfileShare(raw string) (profile, error) {
 	}
 	prof := profileFromMap(rawMap)
 	if prof.ID == "" {
-		prof.ID = fmt.Sprintf("profile-%d", time.Now().UnixNano())
+		suffix, err := randomHex(8)
+		if err != nil {
+			return profile{}, err
+		}
+		prof.ID = "profile-" + suffix
 	}
 	return prof, nil
 }
@@ -1111,6 +1135,7 @@ func loadProfiles(p paths) (profileStore, error) {
 	if err := json.Unmarshal(data, &store); err != nil {
 		return profileStore{}, err
 	}
+	migrated := false
 	for index := range store.Profiles {
 		store.Profiles[index].MaxBatchBytes = legacyAutoBatch(store.Profiles[index].MaxBatchBytes)
 		store.Profiles[index].DataUploadMaxBatchBytes = legacyAutoBatch(store.Profiles[index].DataUploadMaxBatchBytes)
@@ -1119,6 +1144,16 @@ func loadProfiles(p paths) (profileStore, error) {
 		}
 		if store.Profiles[index].SOCKSPort == 0 {
 			store.Profiles[index].SOCKSPort = defaultSOCKSPort
+		}
+		before := store.Profiles[index].HelperPeerID
+		if err := ensureProfileHelperPeerID(&store.Profiles[index]); err != nil {
+			return profileStore{}, err
+		}
+		migrated = migrated || before != store.Profiles[index].HelperPeerID
+	}
+	if migrated {
+		if err := saveProfiles(p, store); err != nil {
+			return profileStore{}, err
 		}
 	}
 	return store, nil
@@ -1144,6 +1179,15 @@ func (s *profileStore) upsert(prof profile) {
 		}
 	}
 	s.Profiles = append(s.Profiles, prof)
+}
+
+func (s profileStore) findByName(name string) (profile, bool) {
+	for _, prof := range s.Profiles {
+		if prof.Name == name {
+			return prof, true
+		}
+	}
+	return profile{}, false
 }
 
 func (s profileStore) selectProfile(name string) (profile, error) {
@@ -1260,6 +1304,9 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 	if err := ensureDirs(p); err != nil {
 		return err
 	}
+	if err := ensureProfileHelperPeerID(&prof); err != nil {
+		return err
+	}
 	_ = os.Remove(p.listenStatePath)
 	config := map[string]interface{}{
 		"transport":                     "http",
@@ -1271,7 +1318,7 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 		"binary_media_type":             "image/webp",
 		"route_template":                "/{lane}/{direction}",
 		"health_template":               "/health",
-		"peer_id":                       "twoman-cli-" + sanitizeName(prof.Name),
+		"peer_id":                       prof.HelperPeerID,
 		"listen_host":                   listenHost,
 		"http_listen_port":              prof.HTTPPort,
 		"socks_listen_port":             prof.SOCKSPort,
@@ -1308,6 +1355,7 @@ func writeRuntimeConfig(p paths, prof profile, listenHost string) error {
 			"decrease_after_errors":     1,
 			"backlog_threshold_frames":  32,
 			"decision_interval_seconds": 0.25,
+			"error_cooldown_seconds":    5,
 		},
 	}
 	if prof.MaxBatchBytes > 0 {
@@ -1696,6 +1744,76 @@ func sanitizeName(value string) string {
 		return "default"
 	}
 	return cleaned
+}
+
+func ensureProfileHelperPeerID(prof *profile) error {
+	if strings.TrimSpace(prof.HelperPeerID) != "" {
+		if cleaned := sanitizePeerID(prof.HelperPeerID); cleaned != "" {
+			prof.HelperPeerID = cleaned
+			return nil
+		}
+	}
+	suffix, err := randomUUIDV4()
+	if err != nil {
+		return err
+	}
+	prof.HelperPeerID = "twoman-cli-" + suffix
+	return nil
+}
+
+func sanitizePeerID(value string) string {
+	cleaned := sanitizePeerComponent(value)
+	if cleaned == "" || cleaned == "twoman-cli" {
+		return ""
+	}
+	if !strings.HasPrefix(cleaned, "twoman-cli-") {
+		cleaned = "twoman-cli-" + cleaned
+	}
+	if len(cleaned) > 80 {
+		cleaned = cleaned[:80]
+		cleaned = strings.TrimRight(cleaned, "-")
+	}
+	return cleaned
+}
+
+func sanitizePeerComponent(value string) string {
+	var builder strings.Builder
+	previousDash := false
+	for _, char := range strings.ToLower(value) {
+		if char >= 'a' && char <= 'z' || char >= '0' && char <= '9' {
+			builder.WriteRune(char)
+			previousDash = false
+		} else if builder.Len() > 0 && !previousDash {
+			builder.WriteByte('-')
+			previousDash = true
+		}
+	}
+	return strings.Trim(builder.String(), "-")
+}
+
+func randomHex(byteCount int) (string, error) {
+	buf := make([]byte, byteCount)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func randomUUIDV4() (string, error) {
+	var uuid [16]byte
+	if _, err := rand.Read(uuid[:]); err != nil {
+		return "", err
+	}
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	return fmt.Sprintf(
+		"%s-%s-%s-%s-%s",
+		hex.EncodeToString(uuid[0:4]),
+		hex.EncodeToString(uuid[4:6]),
+		hex.EncodeToString(uuid[6:8]),
+		hex.EncodeToString(uuid[8:10]),
+		hex.EncodeToString(uuid[10:16]),
+	), nil
 }
 
 func portReady(host string, port int) bool {

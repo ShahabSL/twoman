@@ -162,6 +162,7 @@ def _copy_selected_paths(source_root: Path, bundle_root: Path) -> None:
     ]:
         shutil.copytree(source_root / relative, bundle_root / relative, ignore=ignore)
     for filename in [
+        "VERSION",
         "requirements.txt",
         "runtime_diagnostics.py",
         "twoman_crypto.py",

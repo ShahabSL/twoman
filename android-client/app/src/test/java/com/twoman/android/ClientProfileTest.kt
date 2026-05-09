@@ -28,10 +28,12 @@ class ClientProfileTest {
         ).toRuntimeConfig("/tmp/helper.log", "/tmp/listen-state.json")
 
         assertEquals(45, config.getInt("tls_handshake_timeout_seconds"))
+        assertTrue(config.getString("peer_id").startsWith("twoman-android-"))
         assertEquals(16, config.getJSONObject("up_workers").getInt("data"))
         assertTrue(config.getJSONObject("adaptive_upload").getBoolean("enabled"))
         assertEquals(6, config.getJSONObject("adaptive_upload").getInt("initial_workers"))
         assertEquals(16, config.getJSONObject("adaptive_upload").getInt("max_workers"))
+        assertEquals(5, config.getJSONObject("adaptive_upload").getInt("error_cooldown_seconds"))
     }
 
     @Test
@@ -46,5 +48,18 @@ class ClientProfileTest {
 
         assertEquals(0, profile.dataUploadMaxBatchBytes)
         assertFalse(profile.toRuntimeConfig("/tmp/helper.log", "/tmp/listen-state.json").has("upload_profiles"))
+    }
+
+    @Test
+    fun localHelperPeerIdIsStoredAndUsedOnlyLocally() {
+        val profile = ClientProfile(
+            helperPeerId = "twoman-android-local-only",
+            name = "test",
+            brokerBaseUrl = "https://example.invalid/parvaneh",
+            clientToken = "token",
+        )
+
+        assertEquals("twoman-android-local-only", profile.toJson().getString("helperPeerId"))
+        assertEquals("twoman-android-local-only", profile.toRuntimeConfig("/tmp/helper.log", "/tmp/listen-state.json").getString("peer_id"))
     }
 }

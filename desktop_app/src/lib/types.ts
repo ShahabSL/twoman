@@ -9,6 +9,7 @@ export type ConnectionPhase =
 
 export type ClientProfile = {
   id: string;
+  helperPeerId: string;
   name: string;
   brokerBaseUrl: string;
   clientToken: string;

@@ -3754,6 +3754,7 @@ function coerceInt(value, fallbackValue, minimum = 1) {
   return Math.max(minimum, parsed);
 }
 function brokerCapabilities() {
+  const build = productInfo();
   const agentDownWaitMs = state ? state.downWaitMsForRole("agent") : { ctl: 1e3, data: 1e3 };
   const agentDownReadTimeoutSeconds = Math.max(15, Math.max(agentDownWaitMs.ctl, agentDownWaitMs.data) / 1e3 + 10);
   const helperDownCombinedDataLane = state ? state.helperDownCombinedDataLane : false;
@@ -3772,6 +3773,9 @@ function brokerCapabilities() {
   }
   return {
     version: CAPABILITY_VERSION,
+    product_version: build.product_version,
+    build_commit: build.build_commit,
+    build_time: build.build_time,
     backend_family: "node_selector",
     recommended_profile: PROFILE_MANAGED_HOST_HTTP,
     supported_profiles: supportedProfiles,
@@ -3993,6 +3997,13 @@ function nowMs() {
 }
 function loadConfig() {
   return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+}
+function productInfo() {
+  return {
+    product_version: String(loadedConfig.product_version || process.env.TWOMAN_PRODUCT_VERSION || "dev"),
+    build_commit: String(loadedConfig.build_commit || process.env.TWOMAN_BUILD_COMMIT || "unknown"),
+    build_time: String(loadedConfig.build_time || process.env.TWOMAN_BUILD_TIME || "unknown")
+  };
 }
 function makeErrorPayload(message) {
   return Buffer.from(String(message || ""), "utf8");
@@ -5329,6 +5340,7 @@ var BrokerState = class {
     this.selectAgentPeer();
     const payload = {
       ok: true,
+      ...productInfo(),
       pid: process.pid,
       peers: this.peers.size,
       streams: this.streamsByAgent.size,
@@ -5408,11 +5420,12 @@ ensureLogDir(RUNTIME_LOG_PATH);
 ensureLogDir(EVENT_LOG_PATH);
 var state = new BrokerState(loadedConfig);
 state.recordEvent("broker_loaded", {
+  ...productInfo(),
   config_path: CONFIG_PATH,
   runtime_log_path: RUNTIME_LOG_PATH,
   event_log_path: EVENT_LOG_PATH
 });
-runtimeLog(`broker loaded config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
+runtimeLog(`broker loaded version=${productInfo().product_version} commit=${productInfo().build_commit} config_path=${CONFIG_PATH} runtime_log_path=${RUNTIME_LOG_PATH} event_log_path=${EVENT_LOG_PATH}`);
 function jsonResponse(res, statusCode, payload) {
   const body = Buffer.from(JSON.stringify(payload));
   res.writeHead(statusCode, {

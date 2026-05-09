@@ -217,6 +217,7 @@ pub fn validate_profile(profile: &ClientProfile) -> Result<(), String> {
 }
 
 pub fn normalize_profile_transport_tuning(profile: &mut ClientProfile) {
+    normalize_profile_helper_peer_id(profile);
     if profile.http_port == 0 {
         profile.http_port = DEFAULT_DESKTOP_HTTP_PORT;
     }
@@ -229,6 +230,45 @@ pub fn normalize_profile_transport_tuning(profile: &mut ClientProfile) {
     if profile.data_upload_max_batch_bytes == 65_536 {
         profile.data_upload_max_batch_bytes = 0;
     }
+}
+
+fn normalize_profile_helper_peer_id(profile: &mut ClientProfile) {
+    let current = sanitize_peer_component(&profile.helper_peer_id);
+    if !current.is_empty() {
+        profile.helper_peer_id = current;
+        return;
+    }
+    let suffix = sanitize_peer_component(&profile.id);
+    let suffix = if suffix.is_empty() {
+        "profile".to_string()
+    } else {
+        suffix
+    };
+    profile.helper_peer_id = format!("twoman-desktop-{suffix}");
+    if profile.helper_peer_id.len() > 80 {
+        profile.helper_peer_id.truncate(80);
+        while profile.helper_peer_id.ends_with('-') {
+            profile.helper_peer_id.pop();
+        }
+    }
+}
+
+fn sanitize_peer_component(value: &str) -> String {
+    let mut output = String::new();
+    let mut previous_dash = false;
+    for ch in value.trim().to_ascii_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            output.push(ch);
+            previous_dash = false;
+        } else if !previous_dash && !output.is_empty() {
+            output.push('-');
+            previous_dash = true;
+        }
+    }
+    while output.ends_with('-') {
+        output.pop();
+    }
+    output
 }
 
 pub fn validate_share(share: &SharedProxy) -> Result<(), String> {
@@ -337,6 +377,7 @@ mod tests {
     fn profile_zero_ports_migrate_to_stable_desktop_defaults() {
         let mut profile = ClientProfile {
             id: "profile".into(),
+            helper_peer_id: String::new(),
             name: "Profile".into(),
             broker_base_url: "https://example.com/parvaneh".into(),
             client_token: "token".into(),
@@ -362,5 +403,6 @@ mod tests {
         assert_eq!(profile.socks_port, DEFAULT_DESKTOP_SOCKS_PORT);
         assert_eq!(profile.max_batch_bytes, 0);
         assert_eq!(profile.data_upload_max_batch_bytes, 0);
+        assert_eq!(profile.helper_peer_id, "twoman-desktop-profile");
     }
 }

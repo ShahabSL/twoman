@@ -75,6 +75,36 @@ func TestImportedZeroPortsUseStableDefaults(t *testing.T) {
 	}
 }
 
+func TestRuntimeConfigAllowsEphemeralPortBinding(t *testing.T) {
+	home := t.TempDir()
+	p, err := resolvePaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prof := profile{
+		Name:                 "Ephemeral",
+		BrokerBaseURL:        "https://example.com/parvaneh",
+		ClientToken:          "client-token",
+		TargetAgentPeerLabel: "agent-main",
+		HTTPPort:             0,
+		SOCKSPort:            0,
+	}
+	if err := ensureProfileHelperPeerID(&prof); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeRuntimeConfig(p, prof, "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(p.runtimeConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"http_listen_port": 0`) || !strings.Contains(text, `"socks_listen_port": 0`) {
+		t.Fatalf("runtime config should pass port 0 through to the helper for race-free ephemeral binding:\n%s", text)
+	}
+}
+
 func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	home := t.TempDir()
 	raw := shareText(t, map[string]interface{}{
@@ -99,6 +129,9 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if prof.HelperPeerID == "" {
+		t.Fatal("import did not assign a helper peer id")
+	}
 	if err := writeRuntimeConfig(p, prof, "127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
@@ -112,6 +145,12 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	if !strings.Contains(string(configData), `"adaptive_upload"`) {
 		t.Fatal("runtime config did not include adaptive upload defaults")
 	}
+	if !strings.Contains(string(configData), `"error_cooldown_seconds": 5`) {
+		t.Fatal("runtime config did not include adaptive upload error cooldown")
+	}
+	if !strings.Contains(string(configData), `"peer_id": "`+prof.HelperPeerID+`"`) {
+		t.Fatalf("runtime config did not use profile helper peer id: %s", string(configData))
+	}
 	if strings.Contains(string(configData), `"upload_profiles"`) {
 		t.Fatal("auto profile unexpectedly wrote upload profile overrides")
 	}
@@ -124,6 +163,126 @@ func TestImportProfilesAndRedactedConfig(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "<redacted>") {
 		t.Fatal("config did not mark client token as redacted")
+	}
+}
+
+func TestImportGeneratesPerInstallationHelperPeerID(t *testing.T) {
+	raw := shareText(t, map[string]interface{}{
+		"name":          "Shared route",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "client-token",
+	})
+	var firstOut bytes.Buffer
+	var firstErr bytes.Buffer
+	firstHome := t.TempDir()
+	if err := run([]string{"--home", firstHome, "import", raw}, &firstOut, &firstErr); err != nil {
+		t.Fatalf("first import failed: %v stderr=%s", err, firstErr.String())
+	}
+	firstPaths, err := resolvePaths(firstHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstStore, err := loadProfiles(firstPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstProfile, err := firstStore.selectProfile("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var secondOut bytes.Buffer
+	var secondErr bytes.Buffer
+	secondHome := t.TempDir()
+	if err := run([]string{"--home", secondHome, "import", raw}, &secondOut, &secondErr); err != nil {
+		t.Fatalf("second import failed: %v stderr=%s", err, secondErr.String())
+	}
+	secondPaths, err := resolvePaths(secondHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondStore, err := loadProfiles(secondPaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondProfile, err := secondStore.selectProfile("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if firstProfile.HelperPeerID == "" || secondProfile.HelperPeerID == "" {
+		t.Fatalf("missing helper peer ids: first=%q second=%q", firstProfile.HelperPeerID, secondProfile.HelperPeerID)
+	}
+	if firstProfile.HelperPeerID == secondProfile.HelperPeerID {
+		t.Fatalf("same shared profile imported on two installations got same helper peer id: %s", firstProfile.HelperPeerID)
+	}
+	if !isCLIUUIDPeerID(firstProfile.HelperPeerID) {
+		t.Fatalf("unexpected helper peer id format: %s", firstProfile.HelperPeerID)
+	}
+}
+
+func isCLIUUIDPeerID(value string) bool {
+	const prefix = "twoman-cli-"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	suffix := strings.TrimPrefix(value, prefix)
+	parts := strings.Split(suffix, "-")
+	lengths := []int{8, 4, 4, 4, 12}
+	if len(parts) != len(lengths) {
+		return false
+	}
+	for index, part := range parts {
+		if len(part) != lengths[index] {
+			return false
+		}
+		for _, char := range part {
+			if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func TestReimportPreservesHelperPeerID(t *testing.T) {
+	home := t.TempDir()
+	raw := shareText(t, map[string]interface{}{
+		"name":          "Stable route",
+		"brokerBaseUrl": "https://example.com/parvaneh",
+		"clientToken":   "client-token",
+	})
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := run([]string{"--home", home, "import", raw}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	p, err := resolvePaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadProfiles(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.selectProfile("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := run([]string{"--home", home, "import", raw}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	store, err = loadProfiles(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.selectProfile("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.HelperPeerID != after.HelperPeerID {
+		t.Fatalf("reimport changed helper peer id: before=%s after=%s", before.HelperPeerID, after.HelperPeerID)
 	}
 }
 
@@ -278,6 +437,17 @@ func TestUsageShowsCleanTwomanFlow(t *testing.T) {
 	}
 	if strings.Contains(text, "twoman-client") {
 		t.Fatalf("usage still exposes old binary name:\n%s", text)
+	}
+}
+
+func TestVersionCommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := run([]string{"version"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "twoman ") || !strings.Contains(out.String(), "commit=") {
+		t.Fatalf("unexpected version output: %s", out.String())
 	}
 }
 

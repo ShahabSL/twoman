@@ -3,7 +3,73 @@ set -euo pipefail
 
 TWOMAN_REPO_URL="${TWOMAN_REPO_URL:-https://github.com/ShahabSL/twoman}"
 TWOMAN_REPO_REF="${TWOMAN_REPO_REF:-main}"
-TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL:-${TWOMAN_REPO_URL}/archive/refs/heads/${TWOMAN_REPO_REF}.tar.gz}"
+TWOMAN_INSTALL_VERSION="${TWOMAN_INSTALL_VERSION:-}"
+PASSTHROUGH_ARGS=()
+
+usage() {
+  cat <<'EOF'
+Twoman server installer
+
+Usage:
+  sudo bash scripts/install_twoman.sh [--version VERSION] [installer options]
+  curl -fsSL https://raw.githubusercontent.com/ShahabSL/twoman/main/scripts/install_twoman.sh | sudo bash -s -- --version 1.0.7
+
+Options handled by bootstrap:
+  --version VERSION  Install from a specific GitHub release tag, for example 1.0.7 or v1.0.7.
+  --ref REF          Install from a specific repository branch/ref name.
+  --help            Show this bootstrap help.
+
+Other options are passed through to twoman-server install.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "--version requires a value" >&2
+        exit 2
+      fi
+      TWOMAN_INSTALL_VERSION="$2"
+      shift 2
+      ;;
+    --version=*)
+      TWOMAN_INSTALL_VERSION="${1#--version=}"
+      shift
+      ;;
+    --ref)
+      if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+        echo "--ref requires a value" >&2
+        exit 2
+      fi
+      TWOMAN_REPO_REF="$2"
+      shift 2
+      ;;
+    --ref=*)
+      TWOMAN_REPO_REF="${1#--ref=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      PASSTHROUGH_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ -n "${TWOMAN_INSTALL_VERSION}" ]; then
+  if [[ "${TWOMAN_INSTALL_VERSION}" == v* ]]; then
+    TWOMAN_REPO_REF="${TWOMAN_INSTALL_VERSION}"
+  else
+    TWOMAN_REPO_REF="v${TWOMAN_INSTALL_VERSION}"
+  fi
+  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL:-${TWOMAN_REPO_URL}/archive/refs/tags/${TWOMAN_REPO_REF}.tar.gz}"
+else
+  TWOMAN_REPO_ARCHIVE_URL="${TWOMAN_REPO_ARCHIVE_URL:-${TWOMAN_REPO_URL}/archive/refs/heads/${TWOMAN_REPO_REF}.tar.gz}"
+fi
 
 SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
@@ -11,7 +77,11 @@ if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
-  exec sudo -E bash "$0" "$@"
+  exec sudo -E env \
+    "TWOMAN_INSTALL_VERSION=${TWOMAN_INSTALL_VERSION}" \
+    "TWOMAN_REPO_REF=${TWOMAN_REPO_REF}" \
+    "TWOMAN_REPO_ARCHIVE_URL=${TWOMAN_REPO_ARCHIVE_URL}" \
+    bash "$0" "${PASSTHROUGH_ARGS[@]}"
 fi
 
 BOOTSTRAP_ROOT="$(mktemp -d /tmp/twoman-install.XXXXXX)"
@@ -63,4 +133,4 @@ if [ -z "${TWOMAN_SERVER_LAUNCHER_PATH:-}" ] && [ -n "${TWOMAN_LAUNCHER_PATH:-}"
   export TWOMAN_SERVER_LAUNCHER_PATH="${TWOMAN_LAUNCHER_PATH}"
 fi
 export TWOMAN_SERVER_LAUNCHER_PATH="${TWOMAN_SERVER_LAUNCHER_PATH:-/usr/local/bin/twoman-server}"
-"${BOOTSTRAP_VENV}/bin/python" -m twoman_control.cli install --repo-root "${REPO_ROOT}" "$@"
+"${BOOTSTRAP_VENV}/bin/python" -m twoman_control.cli install --repo-root "${REPO_ROOT}" "${PASSTHROUGH_ARGS[@]}"

@@ -1,6 +1,6 @@
 {
   "name": "twoman-node-selector-broker",
-  "version": "0.1.0",
+  "version": "1.0.7",
   "private": true,
   "description": "Twoman host broker for CloudLinux Node.js Selector",
   "license": "UNLICENSED",

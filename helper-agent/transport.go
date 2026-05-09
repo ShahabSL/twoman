@@ -611,6 +611,7 @@ func (t *laneTransport) upLoop(lane string, workerIdx int) {
 			headers["Content-Type"] = t.cfg.BinaryMediaType
 		}
 
+		started := time.Now()
 		err := t.doPost(client, reqURL, headers, requestBody, t.httpTimeout)
 		if err != nil {
 			t.markUploadError(lane)
@@ -627,7 +628,7 @@ func (t *laneTransport) upLoop(lane string, workerIdx int) {
 			}
 		} else {
 			t.markSuccess("up", lane)
-			t.markUploadSuccess(lane, batchBytes)
+			t.markUploadSuccess(lane, batchBytes, time.Since(started))
 		}
 	}
 }
@@ -1186,8 +1187,8 @@ func (t *laneTransport) waitUploadWorkerActive(lane string, workerIdx int) bool 
 	}
 }
 
-func (t *laneTransport) markUploadSuccess(lane string, batchBytes int) {
-	t.adaptiveUpload.markSuccess(lane, t.uploadBacklogFrames(lane), batchBytes)
+func (t *laneTransport) markUploadSuccess(lane string, batchBytes int, elapsed time.Duration) {
+	t.adaptiveUpload.markSuccess(lane, t.uploadBacklogFrames(lane), batchBytes, elapsed)
 }
 
 func (t *laneTransport) markUploadError(lane string) {

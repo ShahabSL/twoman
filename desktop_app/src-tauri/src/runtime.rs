@@ -645,6 +645,7 @@ impl DesktopRuntime {
                 "transport_profile": "auto",
                 "broker_base_url": profile.broker_base_url,
                 "client_token": profile.client_token,
+                "peer_id": profile.helper_peer_id,
                 "target_agent_peer_label": profile.target_agent_peer_label,
                 "listen_host": "127.0.0.1",
                 "http_listen_port": profile.http_port,
@@ -679,6 +680,7 @@ impl DesktopRuntime {
                     "decrease_after_errors": 1,
                     "backlog_threshold_frames": 32,
                     "decision_interval_seconds": 0.25,
+                    "error_cooldown_seconds": 5,
                 },
                 "trace_enabled": profile.trace_enabled,
         });

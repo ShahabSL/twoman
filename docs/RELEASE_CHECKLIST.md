@@ -8,7 +8,13 @@
 - Verify the headless Linux client bundle:
   - `scripts/build_client_cli_linux.sh`
   - `dist/client-cli/twoman-linux-amd64/twoman --help`
+  - `dist/client-cli/twoman-linux-amd64/twoman version`
+  - `dist/client-cli/twoman-linux-amd64/twoman-helper-agent --version`
+  - `client-cli/install-linux.sh --help`
   - `dist/client-cli/twoman-linux-amd64/twoman connect` without `--helper-bin` in an E2E test
+- Verify the server-control bundle version:
+  - `python -m twoman_control.cli version`
+  - `twoman-server version` after install
 - Verify the repo deploy commands still work when used manually:
   - `scripts/deploy_host.sh`
   - `scripts/deploy_hidden_server.sh`
@@ -27,6 +33,8 @@
 - Verify `host/storage/` is empty or absent
 - Verify `TWOMAN_TRACE` is not enabled in production
 - Verify broker health responds on the configured public base URI, for example `https://host.example.com/<public-base-uri>/health`
+- Verify authenticated broker health includes `product_version`, `build_commit`, and `build_time`
+- Verify deployed hidden agents were built with the release version: `/opt/twoman/twoman-helper-agent --version`
 - Verify any Cloudflare-fronted public hostname still serves broker health and camouflage pages through the intended proxied hostname
 - Verify SOCKS egress through the helper
 - Verify HTTP egress through the helper

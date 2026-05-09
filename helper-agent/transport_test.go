@@ -187,11 +187,11 @@ func TestAdaptiveUploadControllerBoundsWorkersAndBatch(t *testing.T) {
 		t.Fatalf("expected initial adaptive batch 524288, got %d", got)
 	}
 
-	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288)
+	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288, time.Second)
 	if tp.adaptiveUpload.workerActive(LaneData, 4) {
 		t.Fatal("expected one success below threshold to keep worker index 4 inactive")
 	}
-	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288)
+	tp.adaptiveUpload.markSuccess(LaneData, 2, 524288, time.Second)
 	if !tp.adaptiveUpload.workerActive(LaneData, 4) {
 		t.Fatal("expected second backlogged success to activate worker index 4")
 	}

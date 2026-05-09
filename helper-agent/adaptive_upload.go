@@ -23,9 +23,12 @@ type adaptiveUploadLane struct {
 	currentBatch   int
 	maxBatchBytes  int
 
-	successes  int
-	errors     int
-	lastChange time.Time
+	successes     int
+	errors        int
+	lastChange    time.Time
+	lastError     time.Time
+	throughputBps float64
+	bestBps       float64
 }
 
 func newAdaptiveUploadController(cfg AdaptiveUploadConfig, baseWorkers map[string]int, baseProfiles map[string]uploadProfile) *adaptiveUploadController {
@@ -142,7 +145,7 @@ func (c *adaptiveUploadController) applyProfile(lane string, profile uploadProfi
 	return profile
 }
 
-func (c *adaptiveUploadController) markSuccess(lane string, backlogFrames int, batchBytes int) {
+func (c *adaptiveUploadController) markSuccess(lane string, backlogFrames int, batchBytes int, elapsed time.Duration) {
 	if c == nil {
 		return
 	}
@@ -153,7 +156,17 @@ func (c *adaptiveUploadController) markSuccess(lane string, backlogFrames int, b
 		return
 	}
 	state.errors = 0
+	now := time.Now()
+	c.recordThroughput(state, batchBytes, elapsed)
+	if c.errorCooldownActive(state, now) {
+		state.successes = 0
+		return
+	}
 	if backlogFrames < c.backlogThreshold() && batchBytes < (state.currentBatch*3)/4 {
+		state.successes = 0
+		return
+	}
+	if state.bestBps > 0 && state.throughputBps > 0 && state.throughputBps < state.bestBps*0.85 {
 		state.successes = 0
 		return
 	}
@@ -171,10 +184,39 @@ func (c *adaptiveUploadController) markSuccess(lane string, backlogFrames int, b
 	}
 	if changed {
 		state.successes = 0
-		state.lastChange = time.Now()
+		state.lastChange = now
 		log.Printf("[transport] adaptive upload increased lane=%s workers=%d/%d batch=%d/%d backlog_frames=%d batch_bytes=%d",
 			lane, state.currentWorkers, state.maxWorkers, state.currentBatch, state.maxBatchBytes, backlogFrames, batchBytes)
 	}
+}
+
+func (c *adaptiveUploadController) recordThroughput(state *adaptiveUploadLane, batchBytes int, elapsed time.Duration) {
+	if batchBytes <= 0 {
+		return
+	}
+	if elapsed <= 0 {
+		elapsed = time.Millisecond
+	}
+	sample := float64(batchBytes) / elapsed.Seconds()
+	if sample <= 0 {
+		return
+	}
+	if state.throughputBps == 0 {
+		state.throughputBps = sample
+	} else {
+		state.throughputBps = state.throughputBps*0.75 + sample*0.25
+	}
+	if state.throughputBps > state.bestBps {
+		state.bestBps = state.throughputBps
+	}
+}
+
+func (c *adaptiveUploadController) errorCooldownActive(state *adaptiveUploadLane, now time.Time) bool {
+	cooldown := time.Duration(c.config.ErrorCooldownSeconds * float64(time.Second))
+	if cooldown <= 0 || state.lastError.IsZero() {
+		return false
+	}
+	return now.Sub(state.lastError) < cooldown
 }
 
 func (c *adaptiveUploadController) markError(lane string) {
@@ -192,6 +234,8 @@ func (c *adaptiveUploadController) markError(lane string) {
 	if state.errors < c.decreaseAfterErrors() || !c.decisionIntervalElapsed(state) {
 		return
 	}
+	now := time.Now()
+	state.lastError = now
 	changed := false
 	if state.currentWorkers > state.minWorkers {
 		// Congestion-control style multiplicative decrease reacts quickly when
@@ -205,7 +249,7 @@ func (c *adaptiveUploadController) markError(lane string) {
 	}
 	if changed {
 		state.errors = 0
-		state.lastChange = time.Now()
+		state.lastChange = now
 		log.Printf("[transport] adaptive upload reduced lane=%s workers=%d/%d batch=%d/%d",
 			lane, state.currentWorkers, state.maxWorkers, state.currentBatch, state.maxBatchBytes)
 	}

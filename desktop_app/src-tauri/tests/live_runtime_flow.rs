@@ -46,6 +46,7 @@ fn live_profile() -> Option<ClientProfile> {
     let client_token = env::var("TWOMAN_E2E_CLIENT_TOKEN").ok()?;
     Some(ClientProfile {
         id: "live-profile".into(),
+        helper_peer_id: String::new(),
         name: "Live".into(),
         broker_base_url,
         client_token,

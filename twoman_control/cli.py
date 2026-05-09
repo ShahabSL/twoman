@@ -11,6 +11,7 @@ from twoman_control.registry import load_registry, resolve_instance_name, set_de
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="twoman-server")
     parser.add_argument("--instance", dest="global_instance", default="", help="managed instance name")
+    parser.add_argument("--version", action="store_true", help="print version and exit")
     subparsers = parser.add_subparsers(dest="command")
 
     install_parser = subparsers.add_parser("install", help="Run the Twoman deployment wizard")
@@ -76,7 +77,19 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--instance", default="")
     default_parser = subparsers.add_parser("set-default", help="Set the default Twoman instance")
     default_parser.add_argument("instance_name")
+    subparsers.add_parser("version", help="Print the Twoman server-control version")
     return parser
+
+
+def _product_version() -> str:
+    env_version = os.environ.get("TWOMAN_PRODUCT_VERSION", "").strip()
+    if env_version:
+        return env_version
+    version_file = Path(__file__).resolve().parents[1] / "VERSION"
+    try:
+        return version_file.read_text(encoding="utf-8").strip() or "dev"
+    except OSError:
+        return "dev"
 
 
 def _control_root() -> Path:
@@ -168,7 +181,13 @@ def _run_overview(control_root: Path, instance_name: str) -> int:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.version:
+        print(f"twoman-server {_product_version()}")
+        return 0
     command = args.command or "overview"
+    if command == "version":
+        print(f"twoman-server {_product_version()}")
+        return 0
     if command == "install":
         install(args)
         return 0

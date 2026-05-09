@@ -41,6 +41,8 @@ impl Default for SharedProxyProtocol {
 #[serde(rename_all = "camelCase")]
 pub struct ClientProfile {
     pub id: String,
+    #[serde(default)]
+    pub helper_peer_id: String,
     pub name: String,
     pub broker_base_url: String,
     pub client_token: String,

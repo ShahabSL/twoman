@@ -366,6 +366,11 @@ func buildConnectionHeaders(token, role, peerLabel, peerSessionID, userAgent str
 		"Accept-Encoding": "identity",
 		"User-Agent":      userAgent,
 	}
+	if role == "helper" && strings.TrimSpace(cfg.TargetAgentPeerLabel) != "" {
+		// Older deployed host brokers route multi-exit sessions from this header.
+		// The encrypted OPEN payload still carries the same label for current brokers.
+		headers["X-Twoman-Target-Agent"] = strings.TrimSpace(cfg.TargetAgentPeerLabel)
+	}
 	for k, v := range browserHeaders(userAgent, cfg.BrokerBaseURL) {
 		headers[k] = v
 	}

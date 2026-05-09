@@ -6,6 +6,7 @@ import java.util.UUID
 
 data class ClientProfile(
     val id: String = UUID.randomUUID().toString(),
+    val helperPeerId: String = newAndroidHelperPeerId(),
     val name: String,
     val brokerBaseUrl: String,
     val clientToken: String,
@@ -38,6 +39,7 @@ data class ClientProfile(
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
+        put("helperPeerId", effectiveHelperPeerId())
         put("name", name)
         put("brokerBaseUrl", brokerBaseUrl)
         put("clientToken", clientToken)
@@ -66,6 +68,7 @@ data class ClientProfile(
         put("transport_profile", "auto")
         put("broker_base_url", brokerBaseUrl)
         put("client_token", clientToken)
+        put("peer_id", effectiveHelperPeerId())
         put("target_agent_peer_label", targetAgentPeerLabel)
         put("listen_host", "127.0.0.1")
         put("http_listen_hosts", org.json.JSONArray(listOf("127.0.0.1", "::1")))
@@ -128,6 +131,7 @@ data class ClientProfile(
                 put("decrease_after_errors", 1)
                 put("backlog_threshold_frames", 32)
                 put("decision_interval_seconds", 0.25)
+                put("error_cooldown_seconds", 5)
             },
         )
         put(
@@ -182,13 +186,30 @@ data class ClientProfile(
         return "$SHARE_PREFIX$encoded"
     }
 
+    private fun effectiveHelperPeerId(): String {
+        val configured = normalizePeerId(helperPeerId)
+        require(configured.isNotEmpty()) { "helperPeerId is required" }
+        return configured
+    }
+
     companion object {
         private const val SHARE_PREFIX = "twoman://profile?data="
         private const val DEFAULT_VPN_DNS_PROXY_IP = ""
         private val DEFAULT_VPN_DNS_SERVERS = listOf("1.1.1.1", "8.8.8.8")
 
+        private fun normalizePeerId(value: String): String = value.trim()
+            .lowercase()
+            .map { if (it.isLetterOrDigit()) it else '-' }
+            .joinToString("")
+            .replace(Regex("-+"), "-")
+            .trim('-')
+            .take(80)
+
         fun fromJson(json: JSONObject): ClientProfile = ClientProfile(
             id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
+            helperPeerId = json.optString("helperPeerId").ifBlank {
+                json.optString("helper_peer_id")
+            }.ifBlank { newAndroidHelperPeerId() },
             name = json.optString("name"),
             brokerBaseUrl = json.optString("brokerBaseUrl"),
             clientToken = json.optString("clientToken"),
@@ -236,9 +257,14 @@ data class ClientProfile(
                 text.startsWith("{") -> JSONObject(text)
                 else -> error("Invalid import text")
             }
-            return fromJson(json).copy(id = UUID.randomUUID().toString())
+            return fromJson(json).copy(
+                id = UUID.randomUUID().toString(),
+                helperPeerId = newAndroidHelperPeerId(),
+            )
         }
     }
 }
+
+fun newAndroidHelperPeerId(): String = "twoman-android-${UUID.randomUUID()}"
 
 private fun legacyAutoBatch(value: Int): Int = if (value == 65536) 0 else value
