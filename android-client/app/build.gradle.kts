@@ -73,6 +73,9 @@ fun androidNdkDir(): File {
 val buildTwomanGoHelper = tasks.register("buildTwomanGoHelper") {
     val helperSource = repoRoot.dir("helper-agent")
     inputs.dir(helperSource)
+    inputs.property("twomanProductVersion", twomanProductVersion)
+    inputs.property("twomanBuildCommit", twomanBuildCommit)
+    inputs.property("twomanBuildTime", twomanBuildTime)
     outputs.dir(generatedGoJniLibsDir)
 
     doLast {
