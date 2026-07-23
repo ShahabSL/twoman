@@ -14,6 +14,7 @@ from unittest.mock import patch
 from twoman_control.installer import (
     _normalize_base_path,
     _normalize_optional_base_path,
+    _execute_deployment,
     _install_local_hidden_server,
     _purge_host,
     _purge_local_hidden_server,
@@ -87,6 +88,39 @@ def _sample_state(control_root: Path) -> InstallState:
 
 
 class TwomanInstallerTests(unittest.TestCase):
+    def test_deployment_prepares_rollback_controls_before_remote_changes(self) -> None:
+        events: list[str] = []
+
+        def fail_host_deploy(*_args) -> None:
+            events.append("deploy-host")
+            raise RuntimeError("simulated host failure")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            control_root = Path(temp_dir) / "control"
+            state = _sample_state(control_root)
+            args = argparse.Namespace(control_root=control_root, skip_helper_probe=True)
+            with patch(
+                "twoman_control.installer.save_instance_state",
+                side_effect=lambda *_args: events.append("save-state"),
+            ), patch(
+                "twoman_control.installer._create_control_venv",
+                side_effect=lambda *_args: events.append("create-control-venv"),
+            ), patch(
+                "twoman_control.installer._install_launcher",
+                side_effect=lambda *_args: events.append("install-launcher"),
+            ), patch(
+                "twoman_control.installer._deploy_host",
+                side_effect=fail_host_deploy,
+            ):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaisesRegex(RuntimeError, "simulated host failure"):
+                        _execute_deployment(Path("/tmp/repo"), state, args)
+
+        self.assertEqual(
+            events,
+            ["save-state", "create-control-venv", "install-launcher", "deploy-host"],
+        )
+
     def test_server_cli_has_clean_default_and_aliases(self) -> None:
         parser = build_parser()
         self.assertIsNone(parser.parse_args([]).command)
@@ -400,6 +434,27 @@ class TwomanInstallerTests(unittest.TestCase):
         script_path = run_script_mock.call_args.args[0]
         env = run_script_mock.call_args.args[1]
         self.assertEqual(script_path, Path("/tmp/repo/scripts/purge_host_bridge.sh"))
+        self.assertEqual(env["TWOMAN_PUBLIC_BASE_PATH"], "/sahar-honar-221b/payesh-asnad")
+
+    @patch("twoman_control.installer._run_script")
+    def test_purge_host_passenger_uses_passenger_script(self, run_script_mock) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = _sample_state(Path(temp_dir))
+            state.backend = BACKEND_PASSENGER
+            run_script_mock.return_value = subprocess.CompletedProcess(
+                args=["bash", "scripts/purge_host_passenger.sh"],
+                returncode=0,
+                stdout="ok",
+                stderr="",
+            )
+
+            _purge_host(Path("/tmp/repo"), state)
+
+        script_path = run_script_mock.call_args.args[0]
+        env = run_script_mock.call_args.args[1]
+        self.assertEqual(script_path, Path("/tmp/repo/scripts/purge_host_passenger.sh"))
+        self.assertEqual(env["TWOMAN_APP_NAME"], "sahar_honar_221b")
+        self.assertEqual(env["TWOMAN_APP_ROOT"], "/home/cpanel-user/sahar_honar_221b")
         self.assertEqual(env["TWOMAN_PUBLIC_BASE_PATH"], "/sahar-honar-221b/payesh-asnad")
 
     @patch("twoman_control.installer._run_script")

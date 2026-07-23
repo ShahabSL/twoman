@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,12 +56,51 @@ class ManagerController:
     def bundle_root(self) -> Path:
         return Path(self.state.bundle_root)
 
-    def _run(self, command: list[str]) -> ActionResult:
-        result = subprocess.run(command, text=True, capture_output=True, check=False)
+    def _run(self, command: list[str], *, env: dict[str, str] | None = None) -> ActionResult:
+        try:
+            result = subprocess.run(command, text=True, capture_output=True, check=False, env=env)
+        except OSError as error:
+            return ActionResult(False, "command failed to start", str(error))
         details = result.stdout.strip()
         if result.stderr.strip():
             details = f"{details}\n{result.stderr.strip()}".strip()
         return ActionResult(result.returncode == 0, details.splitlines()[0] if details else "ok", details)
+
+    def _hidden_command(self, command: list[str]) -> tuple[list[str], dict[str, str] | None]:
+        if not self.state.hidden_server_host:
+            return command, None
+
+        ssh_command = [
+            "ssh",
+            "-p",
+            str(self.state.hidden_server_port or 22),
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
+        ]
+        if self.state.hidden_server_ssh_key:
+            ssh_command.extend(["-i", self.state.hidden_server_ssh_key])
+
+        command_env = None
+        if self.state.hidden_server_password:
+            command_env = os.environ.copy()
+            command_env["SSHPASS"] = self.state.hidden_server_password
+            ssh_command = ["sshpass", "-e", *ssh_command]
+        else:
+            ssh_command.extend(["-o", "BatchMode=yes"])
+
+        ssh_command.extend(
+            [
+                f"{self.state.hidden_server_user}@{self.state.hidden_server_host}",
+                shlex.join(command),
+            ]
+        )
+        return ssh_command, command_env
+
+    def _run_hidden(self, command: list[str]) -> ActionResult:
+        hidden_command, command_env = self._hidden_command(command)
+        return self._run(hidden_command, env=command_env)
 
     def hidden_route_text(self) -> str:
         if not self.state.hidden_upstream_proxy_url:
@@ -77,11 +117,11 @@ class ManagerController:
         return f"custom outbound proxy via {self.state.hidden_outbound_proxy_url}"
 
     def verify(self) -> ActionResult:
-        service_state = self._run(["systemctl", "is-active", self.state.hidden_service_name])
-        timer_state = self._run(["systemctl", "is-active", self.state.watchdog_timer_name])
+        service_state = self._run_hidden(["systemctl", "is-active", self.state.hidden_service_name])
+        timer_state = self._run_hidden(["systemctl", "is-active", self.state.watchdog_timer_name])
         route_state = None
         if "wireproxy" in {self.state.hidden_upstream_proxy_label, self.state.hidden_outbound_proxy_label}:
-            route_state = self._run(["systemctl", "is-active", "wireproxy.service"])
+            route_state = self._run_hidden(["systemctl", "is-active", "wireproxy.service"])
         try:
             response = httpx_request(
                 "GET",
@@ -114,23 +154,30 @@ class ManagerController:
             return ActionResult(False, "health check failed", str(error))
 
     def restart_agent(self) -> ActionResult:
-        return self._run(["systemctl", "restart", self.state.hidden_service_name])
+        return self._run_hidden(["systemctl", "restart", self.state.hidden_service_name])
 
     def restart_watchdog(self) -> ActionResult:
-        return self._run(["systemctl", "start", self.state.watchdog_service_name])
+        return self._run_hidden(["systemctl", "start", self.state.watchdog_service_name])
 
     def restart_upstream_proxy(self) -> ActionResult:
         if "wireproxy" not in {self.state.hidden_upstream_proxy_label, self.state.hidden_outbound_proxy_label}:
             return ActionResult(False, "no managed WARP proxy", "This deployment is not using managed WARP WireProxy.")
-        return self._run(["systemctl", "restart", "wireproxy.service"])
+        return self._run_hidden(["systemctl", "restart", "wireproxy.service"])
 
     def journal_tail(self, lines: int = 120) -> str:
-        result = subprocess.run(
-            ["journalctl", "-u", self.state.hidden_service_name, "-n", str(lines), "--no-pager"],
-            text=True,
-            capture_output=True,
-            check=False,
+        command, command_env = self._hidden_command(
+            ["journalctl", "-u", self.state.hidden_service_name, "-n", str(lines), "--no-pager"]
         )
+        try:
+            result = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=command_env,
+            )
+        except OSError as error:
+            return f"Failed to load hidden-agent logs: {error}"
         return (result.stdout or result.stderr or "No logs available.").strip()
 
     def capabilities_text(self) -> str:

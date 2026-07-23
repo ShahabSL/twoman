@@ -145,3 +145,120 @@ pub struct DesktopSnapshot {
     pub logs_dir: String,
     pub config_dir: String,
 }
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentBackend {
+    Auto,
+    CloudlinuxNodeSelector,
+    CpanelRuntimeBridge,
+    PassengerPython,
+}
+
+impl DeploymentBackend {
+    pub fn cli_value(&self) -> Option<&'static str> {
+        match self {
+            Self::Auto => None,
+            Self::CloudlinuxNodeSelector => Some("cloudlinux_node_selector"),
+            Self::CpanelRuntimeBridge => Some("cpanel_runtime_bridge"),
+            Self::PassengerPython => Some("passenger_python"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeploymentHiddenTarget {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentRequest {
+    pub instance_name: String,
+    pub release_version: String,
+    pub repo_ref: String,
+    pub site_name: String,
+    pub public_origin: String,
+    pub cpanel_base_url: String,
+    pub cpanel_username: String,
+    pub cpanel_password: String,
+    pub cpanel_home: String,
+    pub cpanel_proxy_url: String,
+    pub public_proxy_url: String,
+    pub backend: DeploymentBackend,
+    pub hidden_target: DeploymentHiddenTarget,
+    pub server_host: String,
+    pub server_port: u16,
+    pub server_user: String,
+    pub server_password: String,
+    pub server_ssh_key: String,
+    pub sudo_password: String,
+    pub control_root: String,
+    pub install_root: String,
+    pub public_base_path: String,
+    pub bridge_public_base_path: String,
+    pub passenger_app_name: String,
+    pub passenger_app_root: String,
+    pub node_app_root: String,
+    pub node_app_uri: String,
+    pub admin_script_name: String,
+    pub hidden_service_name: String,
+    pub hidden_service_user: String,
+    pub hidden_service_group: String,
+    pub watchdog_service_name: String,
+    pub watchdog_timer_name: String,
+    pub hidden_upstream_proxy_url: String,
+    pub hidden_upstream_proxy_label: String,
+    pub hidden_outbound_proxy_url: String,
+    pub hidden_outbound_proxy_label: String,
+    pub verify_tls: Option<bool>,
+    pub skip_helper_probe: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentRollbackRequest {
+    pub instance_name: String,
+    pub sudo_password: String,
+    pub control_root: String,
+    pub launcher_path: String,
+    pub purge_host: bool,
+    pub purge_hidden: bool,
+    pub keep_state: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentMonitorRequest {
+    pub instance_name: String,
+    pub sudo_password: String,
+    pub control_root: String,
+    pub launcher_path: String,
+    pub include_logs: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentResult {
+    pub ok: bool,
+    pub summary: String,
+    pub profile_share_text: String,
+    pub output: String,
+    pub command_label: String,
+    pub started_at: String,
+    pub finished_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeploymentMonitorSnapshot {
+    pub ok: bool,
+    pub summary: String,
+    pub status_output: String,
+    pub logs_output: String,
+    pub profile_share_text: String,
+    pub command_label: String,
+    pub checked_at: String,
+}

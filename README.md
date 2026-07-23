@@ -63,6 +63,12 @@ Fully unattended installs are also supported through `twoman-server install` fla
 after bootstrap. See [docs/EASY_DEPLOY.md](docs/EASY_DEPLOY.md) for the
 non-interactive example.
 
+The Windows desktop app also exposes this installer in a `Deploy` workspace with
+Automatic and Advanced modes, remote hidden-server SSH support, live health/log
+monitoring, rollback controls, and final client-profile output. Deployment from
+Windows runs inside WSL; see [desktop_app/README.md](desktop_app/README.md) for
+requirements and credential-handling details.
+
 After deployment:
 
 - `sudo twoman-server` prints a fast server-control overview and common commands
