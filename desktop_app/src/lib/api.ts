@@ -4,6 +4,11 @@ import { mockDesktopApi } from "@/lib/mock-desktop-api";
 import type {
   ClientProfile,
   ConnectionMode,
+  DeploymentMonitorRequest,
+  DeploymentMonitorSnapshot,
+  DeploymentRequest,
+  DeploymentResult,
+  DeploymentRollbackRequest,
   DesktopSnapshot,
   SharedProxy,
 } from "@/lib/types";
@@ -22,6 +27,9 @@ const mockCommandMap = {
   disconnect: mockDesktopApi.disconnect,
   start_share: mockDesktopApi.startShare,
   stop_share: mockDesktopApi.stopShare,
+  run_deployment: mockDesktopApi.runDeployment,
+  rollback_deployment: mockDesktopApi.rollbackDeployment,
+  load_deployment_monitor: mockDesktopApi.loadDeploymentMonitor,
 } as const;
 
 async function call<T>(command: string, args?: CommandArgs) {
@@ -75,5 +83,14 @@ export const desktopApi = {
   },
   stopShare(shareId: string) {
     return call<DesktopSnapshot>("stop_share", { shareId });
+  },
+  runDeployment(request: DeploymentRequest) {
+    return call<DeploymentResult>("run_deployment", { request });
+  },
+  rollbackDeployment(request: DeploymentRollbackRequest) {
+    return call<DeploymentResult>("rollback_deployment", { request });
+  },
+  loadDeploymentMonitor(request: DeploymentMonitorRequest) {
+    return call<DeploymentMonitorSnapshot>("load_deployment_monitor", { request });
   },
 };

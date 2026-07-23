@@ -1,9 +1,19 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
+import {
+  Activity,
   AlertCircle,
   CheckCircle2,
   Copy,
   Globe,
+  HelpCircle,
   Import,
   LaptopMinimalCheck,
   LoaderCircle,
@@ -13,8 +23,13 @@ import {
   PlugZap,
   Plus,
   Power,
+  RefreshCw,
+  Rocket,
+  RotateCcw,
+  Server,
   Share2,
   Shield,
+  Terminal,
   Trash2,
   Wifi,
   WifiOff,
@@ -28,6 +43,13 @@ import type {
   ClientProfile,
   ConnectionMode,
   ConnectionPhase,
+  DeploymentBackend,
+  DeploymentMonitorRequest,
+  DeploymentMonitorSnapshot,
+  DeploymentRequest,
+  DeploymentResult,
+  DeploymentRollbackRequest,
+  DeploymentUiMode,
   DesktopSnapshot,
   SharedProxy,
   SharedProxyProtocol,
@@ -47,6 +69,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -97,6 +126,72 @@ function blankShare(targetPort: number, protocol: SharedProxyProtocol = "socks")
     listenPort: targetPort + 10000,
     username: `user-${Math.random().toString(16).slice(2, 8)}`,
     password: crypto.randomUUID().replace(/-/g, "").slice(0, 18),
+  };
+}
+
+function blankDeploymentRequest(): DeploymentRequest {
+  return {
+    instanceName: "default",
+    releaseVersion: "",
+    repoRef: "",
+    siteName: "",
+    publicOrigin: "",
+    cpanelBaseUrl: "",
+    cpanelUsername: "",
+    cpanelPassword: "",
+    cpanelHome: "",
+    cpanelProxyUrl: "",
+    publicProxyUrl: "",
+    backend: "auto",
+    hiddenTarget: "local",
+    serverHost: "",
+    serverPort: 22,
+    serverUser: "root",
+    serverPassword: "",
+    serverSshKey: "",
+    sudoPassword: "",
+    controlRoot: "/opt/twoman/control",
+    installRoot: "",
+    publicBasePath: "",
+    bridgePublicBasePath: "",
+    passengerAppName: "",
+    passengerAppRoot: "",
+    nodeAppRoot: "",
+    nodeAppUri: "",
+    adminScriptName: "",
+    hiddenServiceName: "",
+    hiddenServiceUser: "twoman",
+    hiddenServiceGroup: "twoman",
+    watchdogServiceName: "",
+    watchdogTimerName: "",
+    hiddenUpstreamProxyUrl: "",
+    hiddenUpstreamProxyLabel: "",
+    hiddenOutboundProxyUrl: "",
+    hiddenOutboundProxyLabel: "",
+    verifyTls: null,
+    skipHelperProbe: false,
+  };
+}
+
+function rollbackRequestFromDeployment(draft: DeploymentRequest): DeploymentRollbackRequest {
+  return {
+    instanceName: draft.instanceName,
+    sudoPassword: draft.sudoPassword,
+    controlRoot: draft.controlRoot,
+    launcherPath: "/usr/local/bin/twoman-server",
+    purgeHost: true,
+    purgeHidden: true,
+    keepState: false,
+  };
+}
+
+function monitorRequestFromDeployment(draft: DeploymentRequest): DeploymentMonitorRequest {
+  return {
+    instanceName: draft.instanceName,
+    sudoPassword: draft.sudoPassword,
+    controlRoot: draft.controlRoot,
+    launcherPath: "/usr/local/bin/twoman-server",
+    includeLogs: true,
   };
 }
 
@@ -161,6 +256,21 @@ function App() {
   const [importDialog, setImportDialog] = useState<ImportDialogState>({ open: false });
   const [shareDialog, setShareDialog] = useState<ShareDialogState>({ open: false });
   const [activeLogTarget, setActiveLogTarget] = useState<"helper" | "tunnel" | string>("helper");
+  const [workspaceView, setWorkspaceView] = useState<"client" | "deploy">("client");
+  const [deploymentDraft, setDeploymentDraft] = useState<DeploymentRequest>(blankDeploymentRequest);
+  const [rollbackDraft, setRollbackDraft] = useState<DeploymentRollbackRequest>(() =>
+    rollbackRequestFromDeployment(blankDeploymentRequest()),
+  );
+  const [monitorDraft, setMonitorDraft] = useState<DeploymentMonitorRequest>(() =>
+    monitorRequestFromDeployment(blankDeploymentRequest()),
+  );
+  const [deploymentMode, setDeploymentMode] = useState<DeploymentUiMode>("automatic");
+  const [deploymentResult, setDeploymentResult] = useState<DeploymentResult | null>(null);
+  const [monitorSnapshot, setMonitorSnapshot] = useState<DeploymentMonitorSnapshot | null>(null);
+  const [deploymentBusy, setDeploymentBusy] = useState<"deploy" | "rollback" | null>(null);
+  const [monitorBusy, setMonitorBusy] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [coachStep, setCoachStep] = useState(0);
 
   function clearError() {
     setErrorVisible(false);
@@ -209,6 +319,32 @@ function App() {
       window.clearTimeout(clearTimer);
     };
   }, [error]);
+
+  useEffect(() => {
+    setRollbackDraft((current) => ({
+      ...current,
+      instanceName: deploymentDraft.instanceName,
+      sudoPassword: deploymentDraft.sudoPassword,
+      controlRoot: deploymentDraft.controlRoot,
+    }));
+    setMonitorDraft((current) => ({
+      ...current,
+      instanceName: deploymentDraft.instanceName,
+      sudoPassword: deploymentDraft.sudoPassword,
+      controlRoot: deploymentDraft.controlRoot,
+    }));
+  }, [deploymentDraft.controlRoot, deploymentDraft.instanceName, deploymentDraft.sudoPassword]);
+
+  useEffect(() => {
+    if (workspaceView !== "deploy") {
+      return;
+    }
+    const seen = window.localStorage.getItem("twoman.deployCoachSeen");
+    if (seen !== "true") {
+      setCoachStep(0);
+      setCoachOpen(true);
+    }
+  }, [workspaceView]);
 
   const selectedProfile = useMemo(() => {
     if (!snapshot) {
@@ -338,6 +474,62 @@ function App() {
     }
   }
 
+  async function handleRunDeployment() {
+    setDeploymentBusy("deploy");
+    try {
+      const result = await desktopApi.runDeployment(requestForDeploymentMode(deploymentDraft, deploymentMode));
+      setDeploymentResult(result);
+      if (result.ok) {
+        clearError();
+      } else {
+        showError(result.output || result.summary);
+      }
+    } catch (nextError) {
+      showError(normalizeError(nextError));
+    } finally {
+      setDeploymentBusy(null);
+    }
+  }
+
+  async function handleRefreshMonitor() {
+    setMonitorBusy(true);
+    try {
+      const result = await desktopApi.loadDeploymentMonitor(monitorDraft);
+      setMonitorSnapshot(result);
+      if (result.ok) {
+        clearError();
+      } else {
+        showError(result.statusOutput || result.summary);
+      }
+    } catch (nextError) {
+      showError(normalizeError(nextError));
+    } finally {
+      setMonitorBusy(false);
+    }
+  }
+
+  function closeCoach() {
+    window.localStorage.setItem("twoman.deployCoachSeen", "true");
+    setCoachOpen(false);
+  }
+
+  async function handleRollbackDeployment() {
+    setDeploymentBusy("rollback");
+    try {
+      const result = await desktopApi.rollbackDeployment(rollbackDraft);
+      setDeploymentResult(result);
+      if (result.ok) {
+        clearError();
+      } else {
+        showError(result.output || result.summary);
+      }
+    } catch (nextError) {
+      showError(normalizeError(nextError));
+    } finally {
+      setDeploymentBusy(null);
+    }
+  }
+
   return (
     <TooltipProvider>
       <main className="app-shell">
@@ -387,7 +579,7 @@ function App() {
                     />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="truncate text-[1.85rem] font-semibold tracking-[-0.05em]">
+                        <h1 className="truncate text-[1.85rem] font-semibold tracking-normal">
                           Twoman
                         </h1>
                         <StatusBadge phase={connection?.phase ?? "disconnected"} />
@@ -414,6 +606,21 @@ function App() {
                       }
                     />
                   </div>
+
+                  <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#0b0c0f] p-1">
+                    <ModeButton
+                      active={workspaceView === "client"}
+                      icon={<PlugZap className="h-4 w-4" />}
+                      label="Client"
+                      onClick={() => setWorkspaceView("client")}
+                    />
+                    <ModeButton
+                      active={workspaceView === "deploy"}
+                      icon={<Rocket className="h-4 w-4" />}
+                      label="Deploy"
+                      onClick={() => setWorkspaceView("deploy")}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
@@ -422,7 +629,7 @@ function App() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="section-kicker">Profiles</p>
-                      <CardTitle className="mt-2 text-[1.65rem] tracking-[-0.04em]">Saved routes</CardTitle>
+                      <CardTitle className="mt-2 text-[1.65rem] tracking-normal">Saved routes</CardTitle>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -539,12 +746,14 @@ function App() {
           </aside>
 
           <section className="app-workspace flex min-h-0 flex-col gap-4">
+            {workspaceView === "client" ? (
+              <>
             <Card className="panel-shell shrink-0">
               <CardContent className="space-y-4 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="section-kicker">Connection</p>
-                    <h2 className="mt-2 text-[1.8rem] font-semibold tracking-[-0.05em]">
+                    <h2 className="mt-2 text-[1.8rem] font-semibold tracking-normal">
                       Connect this device
                     </h2>
                     <p className="mt-1.5 text-sm text-white/56">
@@ -581,7 +790,7 @@ function App() {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <p className="section-kicker">Selected profile</p>
-                        <h3 className="mt-2 truncate text-[1.7rem] font-semibold tracking-[-0.05em]">
+                        <h3 className="mt-2 truncate text-[1.7rem] font-semibold tracking-normal">
                           {selectedProfile?.name ?? "No profile selected"}
                         </h3>
                         <p className="mt-2 break-all font-mono text-xs text-white/52">
@@ -912,6 +1121,31 @@ function App() {
                 </Card>
               </div>
             </div>
+              </>
+            ) : (
+              <DeploymentWorkspace
+                busy={deploymentBusy}
+                draft={deploymentDraft}
+                mode={deploymentMode}
+                monitor={monitorDraft}
+                monitorBusy={monitorBusy}
+                monitorSnapshot={monitorSnapshot}
+                onCopy={(text) => void handleCopy(text)}
+                onDraftChange={setDeploymentDraft}
+                onModeChange={setDeploymentMode}
+                onMonitorChange={setMonitorDraft}
+                onMonitorRefresh={() => void handleRefreshMonitor()}
+                onOpenCoach={() => {
+                  setCoachStep(0);
+                  setCoachOpen(true);
+                }}
+                onRollbackChange={setRollbackDraft}
+                onRollbackRun={() => void handleRollbackDeployment()}
+                onRun={() => void handleRunDeployment()}
+                result={deploymentResult}
+                rollback={rollbackDraft}
+              />
+            )}
           </section>
         </div>
 
@@ -937,6 +1171,12 @@ function App() {
           onClose={() => setShareDialog({ open: false })}
           onSave={(draft) => void handleSaveShare(draft)}
           state={shareDialog}
+        />
+        <CoachDialog
+          onClose={closeCoach}
+          onStepChange={setCoachStep}
+          open={coachOpen}
+          step={coachStep}
         />
       </main>
     </TooltipProvider>
@@ -1098,6 +1338,916 @@ function EmptyState(props: { title: string; description: string; action: string 
       </div>
       <p className="text-[11px] uppercase tracking-[0.28em] text-white/35">{props.action}</p>
     </div>
+  );
+}
+
+function DeploymentWorkspace(props: {
+  busy: "deploy" | "rollback" | null;
+  draft: DeploymentRequest;
+  mode: DeploymentUiMode;
+  monitor: DeploymentMonitorRequest;
+  monitorBusy: boolean;
+  monitorSnapshot: DeploymentMonitorSnapshot | null;
+  rollback: DeploymentRollbackRequest;
+  result: DeploymentResult | null;
+  onCopy: (text: string) => void;
+  onDraftChange: Dispatch<SetStateAction<DeploymentRequest>>;
+  onModeChange: (mode: DeploymentUiMode) => void;
+  onMonitorChange: Dispatch<SetStateAction<DeploymentMonitorRequest>>;
+  onMonitorRefresh: () => void;
+  onOpenCoach: () => void;
+  onRollbackChange: Dispatch<SetStateAction<DeploymentRollbackRequest>>;
+  onRun: () => void;
+  onRollbackRun: () => void;
+}) {
+  const deploying = props.busy === "deploy";
+  const rollingBack = props.busy === "rollback";
+
+  function updateDraft<K extends keyof DeploymentRequest>(key: K, value: DeploymentRequest[K]) {
+    props.onDraftChange((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateRollback<K extends keyof DeploymentRollbackRequest>(
+    key: K,
+    value: DeploymentRollbackRequest[K],
+  ) {
+    props.onRollbackChange((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateMonitor<K extends keyof DeploymentMonitorRequest>(
+    key: K,
+    value: DeploymentMonitorRequest[K],
+  ) {
+    props.onMonitorChange((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <>
+      <Card className="panel-shell shrink-0">
+        <CardContent className="space-y-4 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="section-kicker">Deployment</p>
+              <h2 className="mt-2 text-[1.8rem] font-semibold tracking-normal">
+                Deploy server stack
+              </h2>
+              <p className="mt-1.5 text-sm text-white/56">
+                cPanel broker, hidden agent, verification, rollback, and client profile output.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button className="h-12 rounded-[18px]" onClick={props.onOpenCoach} variant="outline">
+                <HelpCircle className="h-4 w-4" />
+                Guide
+              </Button>
+              <Button
+                className="h-12 rounded-[18px] px-5 text-base font-semibold"
+                disabled={props.busy !== null}
+                onClick={props.onRun}
+              >
+                {deploying ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
+                {deploying ? "Deploying" : "Deploy"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="surface-chip min-w-0">
+              <p className="section-kicker">Mode</p>
+              <div className="mt-3 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-white/10 bg-[#0b0c0f] p-1">
+                <ModeButton
+                  active={props.mode === "automatic"}
+                  icon={<Rocket className="h-4 w-4" />}
+                  label="Automatic"
+                  onClick={() => props.onModeChange("automatic")}
+                />
+                <ModeButton
+                  active={props.mode === "advanced"}
+                  icon={<Shield className="h-4 w-4" />}
+                  label="Advanced"
+                  onClick={() => props.onModeChange("advanced")}
+                />
+              </div>
+            </div>
+            <InfoTile
+              label="Backend"
+              value={props.mode === "automatic" ? "Auto" : backendLabel(props.draft.backend)}
+            />
+            <InfoTile label="Instance" value={props.draft.instanceName || "default"} />
+            <InfoTile
+              label="Hidden target"
+              value={props.draft.hiddenTarget === "remote" ? props.draft.serverHost || "Remote" : "Local"}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <Card className="panel-shell min-h-0">
+          <CardContent className="space-y-6 overflow-y-auto p-5">
+            <DeploymentSection icon={<Globe className="h-4 w-4" />} title="Public host">
+              <div className="grid gap-4 md:grid-cols-2">
+                <DeploymentTextField
+                  label="Public origin"
+                  onChange={(value) => updateDraft("publicOrigin", value)}
+                  placeholder="https://host.example.com"
+                  value={props.draft.publicOrigin}
+                />
+                <DeploymentTextField
+                  label="cPanel API URL"
+                  onChange={(value) => updateDraft("cpanelBaseUrl", value)}
+                  placeholder="https://host.example.com:2083"
+                  value={props.draft.cpanelBaseUrl}
+                />
+                <DeploymentTextField
+                  label="cPanel username"
+                  onChange={(value) => updateDraft("cpanelUsername", value)}
+                  value={props.draft.cpanelUsername}
+                />
+                <DeploymentTextField
+                  label="cPanel password"
+                  onChange={(value) => updateDraft("cpanelPassword", value)}
+                  type="password"
+                  value={props.draft.cpanelPassword}
+                />
+                <DeploymentTextField
+                  label="cPanel home"
+                  onChange={(value) => updateDraft("cpanelHome", value)}
+                  placeholder="/home/cpanel-user"
+                  value={props.draft.cpanelHome}
+                />
+                {props.mode === "advanced" ? (
+                  <div className="grid gap-2.5">
+                    <Label>Backend</Label>
+                    <Select
+                      onValueChange={(value) => updateDraft("backend", value as DeploymentBackend)}
+                      value={props.draft.backend}
+                    >
+                      <SelectTrigger
+                        aria-label="Backend"
+                        className="h-11 w-full rounded-xl border-white/10 bg-[#121417] px-3.5"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto detect</SelectItem>
+                        <SelectItem value="cloudlinux_node_selector">CloudLinux Node selector</SelectItem>
+                        <SelectItem value="cpanel_runtime_bridge">cPanel runtime bridge</SelectItem>
+                        <SelectItem value="passenger_python">Passenger Python</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+            </DeploymentSection>
+
+            <DeploymentSection icon={<Server className="h-4 w-4" />} title="Hidden server">
+              <div className="flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-white/10 bg-[#0b0c0f] p-1">
+                <ModeButton
+                  active={props.draft.hiddenTarget === "local"}
+                  disabled={props.busy !== null}
+                  icon={<Terminal className="h-4 w-4" />}
+                  label="This machine"
+                  onClick={() => updateDraft("hiddenTarget", "local")}
+                />
+                <ModeButton
+                  active={props.draft.hiddenTarget === "remote"}
+                  disabled={props.busy !== null}
+                  icon={<Server className="h-4 w-4" />}
+                  label="Remote SSH"
+                  onClick={() => updateDraft("hiddenTarget", "remote")}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <DeploymentTextField
+                  label="Instance"
+                  onChange={(value) => updateDraft("instanceName", value)}
+                  value={props.draft.instanceName}
+                />
+                <DeploymentTextField
+                  label="Local sudo password (if required)"
+                  onChange={(value) => updateDraft("sudoPassword", value)}
+                  type="password"
+                  value={props.draft.sudoPassword}
+                />
+                <DeploymentTextField
+                  label="Control root"
+                  onChange={(value) => updateDraft("controlRoot", value)}
+                  value={props.draft.controlRoot}
+                />
+                <DeploymentTextField
+                  label="Install root"
+                  onChange={(value) => updateDraft("installRoot", value)}
+                  placeholder="/opt/twoman or /opt/twoman-name"
+                  value={props.draft.installRoot}
+                />
+              </div>
+
+              {props.draft.hiddenTarget === "remote" ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DeploymentTextField
+                    label="Server host"
+                    onChange={(value) => updateDraft("serverHost", value)}
+                    value={props.draft.serverHost}
+                  />
+                  <DeploymentNumberField
+                    label="SSH port"
+                    onChange={(value) => updateDraft("serverPort", value)}
+                    value={props.draft.serverPort}
+                  />
+                  <DeploymentTextField
+                    label="SSH user"
+                    onChange={(value) => updateDraft("serverUser", value)}
+                    value={props.draft.serverUser}
+                  />
+                  <DeploymentTextField
+                    label="SSH password"
+                    onChange={(value) => updateDraft("serverPassword", value)}
+                    type="password"
+                    value={props.draft.serverPassword}
+                  />
+                  <div className="md:col-span-2">
+                    <DeploymentTextareaField
+                      label="SSH key path"
+                      onChange={(value) => updateDraft("serverSshKey", value)}
+                      placeholder="/root/.ssh/id_ed25519"
+                      value={props.draft.serverSshKey}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </DeploymentSection>
+
+            {props.mode === "advanced" ? (
+              <DeploymentSection icon={<Shield className="h-4 w-4" />} title="Routes and overrides">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DeploymentTextField
+                    label="Release version"
+                    onChange={(value) => updateDraft("releaseVersion", value)}
+                    placeholder="1.0.7"
+                    value={props.draft.releaseVersion}
+                  />
+                  <DeploymentTextField
+                    label="Repo ref"
+                    onChange={(value) => updateDraft("repoRef", value)}
+                    placeholder="main"
+                    value={props.draft.repoRef}
+                  />
+                  <DeploymentTextField
+                    label="Camouflage site name"
+                    onChange={(value) => updateDraft("siteName", value)}
+                    placeholder="Service Portal"
+                    value={props.draft.siteName}
+                  />
+                  <DeploymentTextField
+                    label="Public base path"
+                    onChange={(value) => updateDraft("publicBasePath", value)}
+                    placeholder="/generated/path"
+                    value={props.draft.publicBasePath}
+                  />
+                  <DeploymentTextField
+                    label="Bridge subpath"
+                    onChange={(value) => updateDraft("bridgePublicBasePath", value)}
+                    value={props.draft.bridgePublicBasePath}
+                  />
+                  <DeploymentTextField
+                    label="Hidden upstream proxy"
+                    onChange={(value) => updateDraft("hiddenUpstreamProxyUrl", value)}
+                    placeholder="socks5h://127.0.0.1:1280"
+                    value={props.draft.hiddenUpstreamProxyUrl}
+                  />
+                  <DeploymentTextField
+                    label="Upstream proxy label"
+                    onChange={(value) => updateDraft("hiddenUpstreamProxyLabel", value)}
+                    placeholder="wireproxy"
+                    value={props.draft.hiddenUpstreamProxyLabel}
+                  />
+                  <DeploymentTextField
+                    label="Hidden outbound proxy"
+                    onChange={(value) => updateDraft("hiddenOutboundProxyUrl", value)}
+                    placeholder="socks5h://127.0.0.1:1280"
+                    value={props.draft.hiddenOutboundProxyUrl}
+                  />
+                  <DeploymentTextField
+                    label="Outbound proxy label"
+                    onChange={(value) => updateDraft("hiddenOutboundProxyLabel", value)}
+                    placeholder="wireproxy"
+                    value={props.draft.hiddenOutboundProxyLabel}
+                  />
+                  <DeploymentTextField
+                    label="cPanel proxy"
+                    onChange={(value) => updateDraft("cpanelProxyUrl", value)}
+                    value={props.draft.cpanelProxyUrl}
+                  />
+                  <DeploymentTextField
+                    label="Public proxy"
+                    onChange={(value) => updateDraft("publicProxyUrl", value)}
+                    value={props.draft.publicProxyUrl}
+                  />
+                  <DeploymentTextField
+                    label="Passenger app name"
+                    onChange={(value) => updateDraft("passengerAppName", value)}
+                    value={props.draft.passengerAppName}
+                  />
+                  <DeploymentTextField
+                    label="Passenger app root"
+                    onChange={(value) => updateDraft("passengerAppRoot", value)}
+                    value={props.draft.passengerAppRoot}
+                  />
+                  <DeploymentTextField
+                    label="Node app root"
+                    onChange={(value) => updateDraft("nodeAppRoot", value)}
+                    value={props.draft.nodeAppRoot}
+                  />
+                  <DeploymentTextField
+                    label="Node URI"
+                    onChange={(value) => updateDraft("nodeAppUri", value)}
+                    value={props.draft.nodeAppUri}
+                  />
+                  <DeploymentTextField
+                    label="Admin script"
+                    onChange={(value) => updateDraft("adminScriptName", value)}
+                    value={props.draft.adminScriptName}
+                  />
+                  <DeploymentTextField
+                    label="Hidden service"
+                    onChange={(value) => updateDraft("hiddenServiceName", value)}
+                    value={props.draft.hiddenServiceName}
+                  />
+                  <DeploymentTextField
+                    label="Service user"
+                    onChange={(value) => updateDraft("hiddenServiceUser", value)}
+                    value={props.draft.hiddenServiceUser}
+                  />
+                  <DeploymentTextField
+                    label="Service group"
+                    onChange={(value) => updateDraft("hiddenServiceGroup", value)}
+                    value={props.draft.hiddenServiceGroup}
+                  />
+                  <DeploymentTextField
+                    label="Watchdog service"
+                    onChange={(value) => updateDraft("watchdogServiceName", value)}
+                    value={props.draft.watchdogServiceName}
+                  />
+                  <DeploymentTextField
+                    label="Watchdog timer"
+                    onChange={(value) => updateDraft("watchdogTimerName", value)}
+                    value={props.draft.watchdogTimerName}
+                  />
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2.5">
+                    <Label>TLS verification</Label>
+                    <Select
+                      onValueChange={(value) =>
+                        updateDraft(
+                          "verifyTls",
+                          value === "default" ? null : value === "verify",
+                        )
+                      }
+                      value={
+                        props.draft.verifyTls === null
+                          ? "default"
+                          : props.draft.verifyTls
+                            ? "verify"
+                            : "skip"
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="TLS verification"
+                        className="h-11 w-full rounded-xl border-white/10 bg-[#121417] px-3.5"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">Installer default</SelectItem>
+                        <SelectItem value="verify">Verify certificates</SelectItem>
+                        <SelectItem value="skip">Allow invalid certificates</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DeploymentToggle
+                    checked={props.draft.skipHelperProbe}
+                    label="Skip helper probe"
+                    onCheckedChange={(checked) => updateDraft("skipHelperProbe", checked)}
+                  />
+                </div>
+              </DeploymentSection>
+            ) : (
+              <DeploymentSection icon={<Shield className="h-4 w-4" />} title="Optional routing">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DeploymentTextField
+                    label="Hidden upstream proxy"
+                    onChange={(value) => updateDraft("hiddenUpstreamProxyUrl", value)}
+                    placeholder="socks5h://127.0.0.1:1280"
+                    value={props.draft.hiddenUpstreamProxyUrl}
+                  />
+                  <DeploymentTextField
+                    label="Hidden outbound proxy"
+                    onChange={(value) => updateDraft("hiddenOutboundProxyUrl", value)}
+                    placeholder="socks5h://127.0.0.1:1280"
+                    value={props.draft.hiddenOutboundProxyUrl}
+                  />
+                </div>
+              </DeploymentSection>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="flex min-h-0 flex-col gap-3">
+          <DeploymentMonitorPanel
+            busy={props.monitorBusy}
+            monitor={props.monitor}
+            onCopy={props.onCopy}
+            onMonitorChange={updateMonitor}
+            onRefresh={props.onMonitorRefresh}
+            snapshot={props.monitorSnapshot}
+          />
+
+          <Card className="panel-shell shrink-0">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-kicker">Rollback</p>
+                  <CardTitle className="mt-2 text-lg">Remove deployment</CardTitle>
+                </div>
+                <RotateCcw className="h-5 w-5 text-white/52" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <DeploymentTextField
+                label="Instance"
+                onChange={(value) => updateRollback("instanceName", value)}
+                value={props.rollback.instanceName}
+              />
+              <DeploymentTextField
+                label="Launcher"
+                onChange={(value) => updateRollback("launcherPath", value)}
+                value={props.rollback.launcherPath}
+              />
+              <div className="grid gap-3">
+                <DeploymentToggle
+                  checked={props.rollback.purgeHost}
+                  label="Host files"
+                  onCheckedChange={(checked) => updateRollback("purgeHost", checked)}
+                />
+                <DeploymentToggle
+                  checked={props.rollback.purgeHidden}
+                  label="Hidden service"
+                  onCheckedChange={(checked) => updateRollback("purgeHidden", checked)}
+                />
+                <DeploymentToggle
+                  checked={props.rollback.keepState}
+                  label="Keep state"
+                  onCheckedChange={(checked) => updateRollback("keepState", checked)}
+                />
+              </div>
+              <Button
+                className="h-11 w-full rounded-[16px]"
+                disabled={props.busy !== null || (!props.rollback.purgeHost && !props.rollback.purgeHidden)}
+                onClick={props.onRollbackRun}
+                variant="outline"
+              >
+                {rollingBack ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4" />
+                )}
+                {rollingBack ? "Rolling back" : "Rollback"}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <DeploymentResultPanel onCopy={props.onCopy} result={props.result} />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DeploymentSection(props: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-4 rounded-[24px] border border-white/8 bg-[#0b0c0f] p-4">
+      <div className="flex items-center gap-2">
+        <div className="rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/68">
+          {props.icon}
+        </div>
+        <h3 className="text-base font-semibold">{props.title}</h3>
+      </div>
+      {props.children}
+    </section>
+  );
+}
+
+function DeploymentTextField(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-2.5">
+      <Label htmlFor={id}>{props.label}</Label>
+      <Input
+        id={id}
+        onChange={(event) => props.onChange(event.currentTarget.value)}
+        placeholder={props.placeholder}
+        type={props.type}
+        value={props.value}
+      />
+    </div>
+  );
+}
+
+function DeploymentTextareaField(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-2.5">
+      <Label htmlFor={id}>{props.label}</Label>
+      <Textarea
+        className="min-h-[88px]"
+        id={id}
+        onChange={(event) => props.onChange(event.currentTarget.value)}
+        placeholder={props.placeholder}
+        value={props.value}
+      />
+    </div>
+  );
+}
+
+function DeploymentNumberField(props: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="grid gap-2.5">
+      <Label htmlFor={id}>{props.label}</Label>
+      <Input
+        id={id}
+        inputMode="numeric"
+        onChange={(event) => props.onChange(Number(event.currentTarget.value || 0))}
+        value={String(props.value)}
+      />
+    </div>
+  );
+}
+
+function DeploymentToggle(props: {
+  checked: boolean;
+  label: string;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[18px] border border-white/10 bg-[#111316] px-4 py-3">
+      <Label className="text-sm font-medium" htmlFor={id}>
+        {props.label}
+      </Label>
+      <Switch checked={props.checked} id={id} onCheckedChange={props.onCheckedChange} />
+    </div>
+  );
+}
+
+function DeploymentResultPanel(props: {
+  result: DeploymentResult | null;
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <Card className="panel-shell min-h-0 flex-1">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="section-kicker">Result</p>
+            <CardTitle className="mt-2 text-lg">Profile and logs</CardTitle>
+          </div>
+          <Terminal className="h-5 w-5 text-white/52" />
+        </div>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+        {props.result ? (
+          <>
+            <Badge
+              className={cn(
+                "status-pill w-fit",
+                props.result.ok
+                  ? "border-emerald-300/20 bg-emerald-300/90 text-black"
+                  : "border-rose-300/20 bg-rose-300/16 text-rose-100",
+              )}
+              variant="outline"
+            >
+              <span className={cn("h-2 w-2 rounded-full", props.result.ok ? "bg-black" : "bg-rose-200")} />
+              {props.result.summary}
+            </Badge>
+            {props.result.profileShareText ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="section-kicker">Client profile</p>
+                  <Button
+                    className="h-9 rounded-full"
+                    onClick={() => props.onCopy(props.result?.profileShareText ?? "")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy
+                  </Button>
+                </div>
+                <Textarea
+                  className="min-h-[130px] font-mono text-xs"
+                  readOnly
+                  value={props.result.profileShareText}
+                />
+              </div>
+            ) : null}
+            <div className="min-h-[220px] flex-1 overflow-y-auto rounded-[22px] border border-white/8 bg-[#0b0c0f]">
+              <pre className="min-h-full whitespace-pre-wrap break-words p-4 font-mono text-xs leading-6 text-white/84">
+                {props.result.output || "No output."}
+              </pre>
+            </div>
+          </>
+        ) : (
+          <EmptyState
+            action="Run deployment"
+            description="Deployment output and import text appear here."
+            title="No result"
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeploymentMonitorPanel(props: {
+  busy: boolean;
+  monitor: DeploymentMonitorRequest;
+  snapshot: DeploymentMonitorSnapshot | null;
+  onCopy: (text: string) => void;
+  onMonitorChange: <K extends keyof DeploymentMonitorRequest>(
+    key: K,
+    value: DeploymentMonitorRequest[K],
+  ) => void;
+  onRefresh: () => void;
+}) {
+  const details = parseMonitorDetails(props.snapshot?.statusOutput ?? "");
+  return (
+    <Card className="panel-shell shrink-0">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="section-kicker">Monitoring</p>
+            <CardTitle className="mt-2 text-lg">Live server status</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-white/52" />
+            <Button
+              className="h-10 rounded-full"
+              disabled={props.busy}
+              onClick={props.onRefresh}
+              size="sm"
+              variant="outline"
+            >
+              {props.busy ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3">
+          <DeploymentTextField
+            label="Instance"
+            onChange={(value) => props.onMonitorChange("instanceName", value)}
+            value={props.monitor.instanceName}
+          />
+          <DeploymentToggle
+            checked={props.monitor.includeLogs}
+            label="Include logs"
+            onCheckedChange={(checked) => props.onMonitorChange("includeLogs", checked)}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MonitorTile
+            label="Broker"
+            tone={monitorValue(details, "broker_ok") === "true" ? "good" : "neutral"}
+            value={monitorValue(details, "broker_ok", props.snapshot ? "unknown" : "Not checked")}
+          />
+          <MonitorTile label="Peers" value={monitorValue(details, "peers", "-")} />
+          <MonitorTile label="Streams" value={monitorValue(details, "streams", "-")} />
+          <MonitorTile
+            label="Hidden"
+            tone={monitorValue(details, "service") === "active" ? "good" : "neutral"}
+            value={monitorValue(details, "service", "-")}
+          />
+          <MonitorTile label="Watchdog" value={monitorValue(details, "watchdog", "-")} />
+          <MonitorTile label="Host route" value={monitorValue(details, "host_route", "-")} />
+        </div>
+
+        {props.snapshot?.profileShareText ? (
+          <Button
+            className="h-10 w-full rounded-[16px]"
+            onClick={() => props.onCopy(props.snapshot?.profileShareText ?? "")}
+            variant="outline"
+          >
+            <Copy className="h-4 w-4" />
+            Copy profile
+          </Button>
+        ) : null}
+
+        {props.snapshot?.logsOutput ? (
+          <div className="max-h-[180px] overflow-y-auto rounded-[18px] border border-white/8 bg-[#0b0c0f]">
+            <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11px] leading-5 text-white/78">
+              {props.snapshot.logsOutput}
+            </pre>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MonitorTile(props: { label: string; value: string; tone?: "good" | "neutral" }) {
+  return (
+    <div className="surface-chip min-w-0 px-3 py-2.5">
+      <p className="section-kicker">{props.label}</p>
+      <p
+        className={cn(
+          "mt-2 break-all font-mono text-xs",
+          props.tone === "good" ? "text-emerald-200" : "text-white/88",
+        )}
+      >
+        {props.value}
+      </p>
+    </div>
+  );
+}
+
+function parseMonitorDetails(output: string): Record<string, unknown> | null {
+  const text = output.trim();
+  if (!text.startsWith("{")) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function monitorValue(
+  details: Record<string, unknown> | null,
+  key: string,
+  fallback = "unknown",
+) {
+  const value = details?.[key];
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  return String(value);
+}
+
+function backendLabel(backend: DeploymentBackend) {
+  switch (backend) {
+    case "cloudlinux_node_selector":
+      return "Node selector";
+    case "cpanel_runtime_bridge":
+      return "Runtime bridge";
+    case "passenger_python":
+      return "Passenger";
+    default:
+      return "Auto";
+  }
+}
+
+function requestForDeploymentMode(
+  draft: DeploymentRequest,
+  mode: DeploymentUiMode,
+): DeploymentRequest {
+  if (mode === "advanced") {
+    return draft;
+  }
+  return {
+    ...draft,
+    backend: "auto",
+    releaseVersion: "",
+    repoRef: "",
+    siteName: "",
+    publicBasePath: "",
+    bridgePublicBasePath: "",
+    passengerAppName: "",
+    passengerAppRoot: "",
+    nodeAppRoot: "",
+    nodeAppUri: "",
+    adminScriptName: "",
+    hiddenServiceName: "",
+    hiddenServiceUser: "",
+    hiddenServiceGroup: "",
+    watchdogServiceName: "",
+    watchdogTimerName: "",
+    hiddenUpstreamProxyLabel: "",
+    hiddenOutboundProxyLabel: "",
+    verifyTls: null,
+    skipHelperProbe: false,
+  };
+}
+
+const coachSteps = [
+  {
+    title: "Choose a deployment mode",
+    body:
+      "Automatic uses Twoman's installer defaults, host capability detection, generated paths, verification, and profile output. Advanced exposes backend, path, service, proxy, TLS, and probe overrides.",
+  },
+  {
+    title: "Provide access",
+    body:
+      "The public host section needs the cPanel account. The hidden server section can install on this machine or connect over SSH to a separate Linux server.",
+  },
+  {
+    title: "Deploy and monitor",
+    body:
+      "Deploy runs the existing installer end-to-end. Monitoring refreshes twoman-server status, broker health, hidden service state, watchdog state, peer count, route mode, logs, and the saved client profile.",
+  },
+  {
+    title: "Rollback when needed",
+    body:
+      "Rollback calls twoman-server purge for the selected instance. You can remove host files, hidden-server services, or both, and keep state when you only need a partial cleanup.",
+  },
+] as const;
+
+function CoachDialog(props: {
+  open: boolean;
+  step: number;
+  onStepChange: (step: number) => void;
+  onClose: () => void;
+}) {
+  if (!props.open) {
+    return null;
+  }
+  const step = coachSteps[Math.min(props.step, coachSteps.length - 1)];
+  const last = props.step >= coachSteps.length - 1;
+  return (
+    <Dialog onOpenChange={(open) => !open && props.onClose()} open>
+      <DialogContent className="sm:max-w-[560px]">
+        <DialogHeader>
+          <DialogTitle>{step.title}</DialogTitle>
+          <DialogDescription>{step.body}</DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center gap-2">
+          {coachSteps.map((item, index) => (
+            <button
+              className={cn(
+                "h-2.5 flex-1 rounded-full transition-colors",
+                index === props.step ? "bg-white" : "bg-white/16",
+              )}
+              key={item.title}
+              onClick={() => props.onStepChange(index)}
+              type="button"
+            >
+              <span className="sr-only">{item.title}</span>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button
+            disabled={props.step === 0}
+            onClick={() => props.onStepChange(Math.max(0, props.step - 1))}
+            variant="outline"
+          >
+            Back
+          </Button>
+          <Button
+            onClick={() => {
+              if (last) {
+                props.onClose();
+                return;
+              }
+              props.onStepChange(props.step + 1);
+            }}
+          >
+            {last ? "Done" : "Next"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
