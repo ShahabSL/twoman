@@ -338,6 +338,10 @@ class _NodeBrokerFixture:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
                 self.proc.wait(timeout=5)
+            if self.proc.stdout:
+                self.proc.stdout.close()
+            if self.proc.stderr:
+                self.proc.stderr.close()
         if self.tmpdir:
             self.tmpdir.cleanup()
 

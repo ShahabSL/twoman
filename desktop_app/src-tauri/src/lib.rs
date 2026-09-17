@@ -1,9 +1,13 @@
+pub mod deployment;
 pub mod models;
 pub mod runtime;
 pub mod storage;
 pub mod system_proxy;
 
-use models::{ClientProfile, ConnectionMode, DesktopSnapshot, SharedProxy};
+use models::{
+    ClientProfile, ConnectionMode, DeploymentMonitorRequest, DeploymentMonitorSnapshot,
+    DeploymentRequest, DeploymentResult, DeploymentRollbackRequest, DesktopSnapshot, SharedProxy,
+};
 use runtime::DesktopRuntime;
 use std::sync::Arc;
 use storage::AppPaths;
@@ -151,6 +155,31 @@ async fn stop_share(
     .map_err(|error| format!("stop_share task failed: {error}"))?
 }
 
+#[tauri::command]
+async fn run_deployment(request: DeploymentRequest) -> Result<DeploymentResult, String> {
+    tauri::async_runtime::spawn_blocking(move || deployment::run_deployment(request))
+        .await
+        .map_err(|error| format!("run_deployment task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn rollback_deployment(
+    request: DeploymentRollbackRequest,
+) -> Result<DeploymentResult, String> {
+    tauri::async_runtime::spawn_blocking(move || deployment::rollback_deployment(request))
+        .await
+        .map_err(|error| format!("rollback_deployment task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn load_deployment_monitor(
+    request: DeploymentMonitorRequest,
+) -> Result<DeploymentMonitorSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || deployment::load_deployment_monitor(request))
+        .await
+        .map_err(|error| format!("load_deployment_monitor task failed: {error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -172,7 +201,10 @@ pub fn run() {
             connect,
             disconnect,
             start_share,
-            stop_share
+            stop_share,
+            run_deployment,
+            rollback_deployment,
+            load_deployment_monitor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

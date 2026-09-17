@@ -23,7 +23,7 @@ if "%TWOMAN_BUILD_COMMIT%"=="" (
 )
 if "%TWOMAN_BUILD_COMMIT%"=="" set TWOMAN_BUILD_COMMIT=unknown
 if "%TWOMAN_BUILD_TIME%"=="" (
-  for /f %%t in ('powershell -NoProfile -Command "Get-Date -AsUTC -Format yyyy-MM-ddTHH:mm:ssZ"') do set TWOMAN_BUILD_TIME=%%t
+  for /f %%t in ('powershell -NoProfile -Command "(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')"') do set TWOMAN_BUILD_TIME=%%t
 )
 if "%TWOMAN_BUILD_TIME%"=="" set TWOMAN_BUILD_TIME=unknown
 

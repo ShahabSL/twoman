@@ -15,6 +15,8 @@ What it does:
 - `Tunnel` mode on Windows, implemented as a TUN sidecar routed into the local Twoman SOCKS helper
 - authenticated public SOCKS and HTTP proxies that forward into the local Twoman helper
 - copyable helper/share logs inside the app
+- automatic and advanced public-host plus hidden-server deployment
+- deployment health monitoring, logs, profile output, and scoped rollback
 
 Important scope:
 - this app is the user-facing desktop shell
@@ -46,6 +48,36 @@ The app starts with no profiles. Add one profile in the UI or import share text.
 Imported share text defaults to stable local ports on desktop. Use `0` in the
 profile editor only when you intentionally want ephemeral ports that can change
 after the helper restarts.
+
+## Deployment Workspace
+
+The `Deploy` workspace drives the existing `twoman-server` installer and keeps
+deployment behavior aligned with the supported CLI:
+
+- `Automatic` detects the cPanel backend and generates paths, names, tokens, and
+  the final client profile.
+- `Advanced` exposes the installer backend, paths, service names, proxy routing,
+  TLS policy, release/ref selection, and helper-probe controls.
+- The hidden server can be the local Linux environment or a separate server
+  reached with an SSH key or password.
+- Monitoring reads broker health plus the local or remote hidden-agent systemd
+  state and logs.
+- Rollback can remove the public host, hidden server, or both while optionally
+  retaining the root-only deployment state.
+- Rollback state and the management launcher are created before remote changes,
+  so cleanup remains available after a partially failed deployment.
+
+Windows deployment requires WSL with a Debian/Ubuntu-compatible distribution.
+The app runs the Linux installer inside WSL and bootstraps missing `curl`, Python,
+Go, OpenSSH client, and `sshpass` packages through `apt` when the selected flow
+needs them. The WSL user must have sudo access, and the GUI asks for that password
+when the distribution does not run as root.
+
+Deployment credentials are forwarded to the installer without being written to
+the desktop app's profile storage. The server controller retains cPanel and SSH
+credentials in its root-only state because later monitoring, redeploy, and purge
+operations need them. Use a least-privilege cPanel account and an SSH key where
+possible.
 
 ## Windows Config Fields
 

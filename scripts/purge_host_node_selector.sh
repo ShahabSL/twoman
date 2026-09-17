@@ -68,7 +68,7 @@ if [ -n "${TWOMAN_PUBLIC_PROXY_URL}" ]; then
   PUBLIC_PROXY_ARGS+=(--proxy "${TWOMAN_PUBLIC_PROXY_URL}")
 fi
 
-APP_RELATIVE="${TWOMAN_NODE_APP_ROOT#${TWOMAN_CPANEL_HOME}/}"
+APP_RELATIVE="${TWOMAN_NODE_APP_ROOT#"${TWOMAN_CPANEL_HOME}"/}"
 ADMIN_PHP="$(cat <<EOF
 <?php
 header('Content-Type: application/json');

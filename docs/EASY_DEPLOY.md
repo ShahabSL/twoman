@@ -233,8 +233,9 @@ target a non-default tunnel.
 
 - Use [docs/MANUAL_DEPLOY.md](docs/MANUAL_DEPLOY.md) only when you need to
   inspect or override each deployment stage directly.
-- Server management is CLI-only. The old interactive management UI is no
-  longer a supported surface.
+- Server management is available through the desktop app's `Deploy` workspace
+  and through the non-interactive `twoman-server` CLI. The old terminal-based
+  interactive management UI is no longer a supported surface.
 - The installer saves the cPanel credentials in the root-only state file
   because host redeploy and reconfigure actions need them later.
 - If the public host cannot be reached from the Linux machine, capability

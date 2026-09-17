@@ -3,6 +3,11 @@ import type {
   ConnectionMode,
   ConnectionPhase,
   ConnectionStatus,
+  DeploymentMonitorRequest,
+  DeploymentMonitorSnapshot,
+  DeploymentRequest,
+  DeploymentResult,
+  DeploymentRollbackRequest,
   DesktopSnapshot,
   ShareStatus,
   SharedProxy,
@@ -171,6 +176,49 @@ function snapshotFromState(): DesktopSnapshot {
   };
 }
 
+function makeDeploymentResult(partial: Partial<DeploymentResult>): DeploymentResult {
+  const now = new Date().toISOString();
+  return {
+    ok: partial.ok ?? true,
+    summary: partial.summary ?? "deployment complete",
+    profileShareText:
+      partial.profileShareText ??
+      "twoman://profile?data=eyJuYW1lIjoiRGVtbyBSb3V0ZSIsImJyb2tlckJhc2VVcmwiOiJodHRwczovL2Jyb2tlci5leGFtcGxlLm5ldC9jb25uZWN0IiwiY2xpZW50VG9rZW4iOiJkZW1vLXRva2VuIn0",
+    output: partial.output ?? "",
+    commandLabel: partial.commandLabel ?? "mock deployment",
+    startedAt: partial.startedAt ?? now,
+    finishedAt: partial.finishedAt ?? now,
+  };
+}
+
+function makeDeploymentMonitor(partial: Partial<DeploymentMonitorSnapshot>): DeploymentMonitorSnapshot {
+  return {
+    ok: partial.ok ?? true,
+    summary: partial.summary ?? "healthy",
+    statusOutput:
+      partial.statusOutput ??
+      JSON.stringify(
+        {
+          service: "active",
+          watchdog: "active",
+          host_route: "direct",
+          outbound_route: "direct",
+          broker_ok: true,
+          peers: 1,
+          streams: 0,
+        },
+        null,
+        2,
+      ),
+    logsOutput:
+      partial.logsOutput ??
+      "[Server]\\n2026-06-08 11:20:00 INFO hidden agent connected\\n2026-06-08 11:20:01 INFO broker health ok\\n",
+    profileShareText: partial.profileShareText ?? "",
+    commandLabel: partial.commandLabel ?? "mock twoman-server status",
+    checkedAt: partial.checkedAt ?? new Date().toISOString(),
+  };
+}
+
 function updateConnection(phase: ConnectionPhase, message: string) {
   const activeProfile =
     mockState.profiles.find((profile) => profile.id === mockState.selectedProfileId) ?? null;
@@ -293,5 +341,55 @@ export const mockDesktopApi = {
         : status,
     );
     return snapshotFromState();
+  },
+  async runDeployment(request: DeploymentRequest) {
+    const origin = request.publicOrigin || "https://broker.example.net";
+    const instance = request.instanceName || "default";
+    return makeDeploymentResult({
+      summary: `Deployed ${instance}`,
+      profileShareText:
+        "twoman://profile?data=eyJuYW1lIjoiRGVtb25zdHJhdGlvbiBIb3N0IiwiYnJva2VyQmFzZVVybCI6Imh0dHBzOi8vYnJva2VyLmV4YW1wbGUubmV0L2Nvbm5lY3QiLCJjbGllbnRUb2tlbiI6ImRlbW8tdG9rZW4iLCJ2ZXJpZnlUbHMiOnRydWV9",
+      output: [
+        "Detected host backends:",
+        "  - CloudLinux Node Selector: recommended",
+        "",
+        "Deploy summary:",
+        `  instance: ${instance}`,
+        `  public origin: ${origin}`,
+        "  hidden target: local machine",
+        "",
+        "Twoman deployment complete.",
+        "",
+        "Import text:",
+        "twoman://profile?data=eyJuYW1lIjoiRGVtb25zdHJhdGlvbiBIb3N0IiwiYnJva2VyQmFzZVVybCI6Imh0dHBzOi8vYnJva2VyLmV4YW1wbGUubmV0L2Nvbm5lY3QiLCJjbGllbnRUb2tlbiI6ImRlbW8tdG9rZW4iLCJ2ZXJpZnlUbHMiOnRydWV9",
+      ].join("\n"),
+      commandLabel: "mock install_twoman.sh",
+    });
+  },
+  async rollbackDeployment(request: DeploymentRollbackRequest) {
+    return makeDeploymentResult({
+      summary: `Rolled back ${request.instanceName || "default"}`,
+      profileShareText: "",
+      output: [
+        `purged instance ${request.instanceName || "default"}: ${
+          request.purgeHost && request.purgeHidden
+            ? "host hidden"
+            : request.purgeHost
+              ? "host"
+              : "hidden"
+        }`,
+      ].join("\n"),
+      commandLabel: "mock twoman-server purge",
+    });
+  },
+  async loadDeploymentMonitor(request: DeploymentMonitorRequest) {
+    return makeDeploymentMonitor({
+      summary: `${request.instanceName || "default"} healthy`,
+      profileShareText:
+        "twoman://profile?data=eyJuYW1lIjoiRGVtb25zdHJhdGlvbiBIb3N0IiwiYnJva2VyQmFzZVVybCI6Imh0dHBzOi8vYnJva2VyLmV4YW1wbGUubmV0L2Nvbm5lY3QiLCJjbGllbnRUb2tlbiI6ImRlbW8tdG9rZW4iLCJ2ZXJpZnlUbHMiOnRydWV9",
+      logsOutput: request.includeLogs
+        ? "[Server]\\n2026-06-08 11:20:00 INFO hidden agent connected\\n2026-06-08 11:20:01 INFO broker health ok\\n"
+        : "",
+    });
   },
 };

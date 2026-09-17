@@ -94,6 +94,65 @@ if [ "$(id -u)" -ne 0 ]; then
     bash "$0" "${PASSTHROUGH_ARGS[@]}"
 fi
 
+ensure_bootstrap_dependencies() {
+  local needs_remote=0
+  local needs_password_auth=0
+  local index argument
+  local -a missing_packages=()
+
+  for ((index = 0; index < ${#PASSTHROUGH_ARGS[@]}; index++)); do
+    argument="${PASSTHROUGH_ARGS[$index]}"
+    case "${argument}" in
+      --server-host)
+        if [ -n "${PASSTHROUGH_ARGS[$((index + 1))]:-}" ]; then
+          needs_remote=1
+        fi
+        ;;
+      --server-host=*)
+        if [ -n "${argument#--server-host=}" ]; then
+          needs_remote=1
+        fi
+        ;;
+      --server-password)
+        if [ -n "${PASSTHROUGH_ARGS[$((index + 1))]:-}" ]; then
+          needs_password_auth=1
+        fi
+        ;;
+      --server-password=*)
+        if [ -n "${argument#--server-password=}" ]; then
+          needs_password_auth=1
+        fi
+        ;;
+    esac
+  done
+
+  command -v python3 >/dev/null 2>&1 || missing_packages+=(python3)
+  command -v curl >/dev/null 2>&1 || missing_packages+=(curl)
+  command -v tar >/dev/null 2>&1 || missing_packages+=(tar)
+  command -v go >/dev/null 2>&1 || missing_packages+=(golang-go)
+  if [ "${needs_remote}" -eq 1 ]; then
+    if ! command -v ssh >/dev/null 2>&1 || ! command -v scp >/dev/null 2>&1; then
+      missing_packages+=(openssh-client)
+    fi
+  fi
+  if [ "${needs_password_auth}" -eq 1 ] && ! command -v sshpass >/dev/null 2>&1; then
+    missing_packages+=(sshpass)
+  fi
+
+  if [ "${#missing_packages[@]}" -eq 0 ]; then
+    return 0
+  fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "Missing required commands. Install these packages and retry: ${missing_packages[*]}" >&2
+    exit 1
+  fi
+
+  if ! apt-get update; then
+    echo "Warning: apt metadata refresh failed; trying the existing package cache." >&2
+  fi
+  DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates "${missing_packages[@]}"
+}
+
 BOOTSTRAP_ROOT="$(mktemp -d /tmp/twoman-install.XXXXXX)"
 REPO_ROOT=""
 
@@ -111,7 +170,9 @@ ensure_python_venv_support() {
   fi
   rm -rf "${probe_dir}"
   if command -v apt-get >/dev/null 2>&1; then
-    apt-get update
+    if ! apt-get update; then
+      echo "Warning: apt metadata refresh failed; trying the existing package cache." >&2
+    fi
     DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
     return 0
   fi
@@ -126,6 +187,8 @@ create_bootstrap_venv() {
   "${venv_root}/bin/python" -m pip install -r "${REPO_ROOT}/requirements.txt" >&2
   printf '%s\n' "${venv_root}"
 }
+
+ensure_bootstrap_dependencies
 
 if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/../twoman_control/cli.py" ] && [ -z "${TWOMAN_INSTALL_VERSION}" ] && [ "${TWOMAN_REPO_REF_EXPLICIT}" -eq 0 ] && [ -z "${TWOMAN_REPO_ARCHIVE_URL_FROM_ENV}" ]; then
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

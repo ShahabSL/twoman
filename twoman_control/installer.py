@@ -624,6 +624,19 @@ def _purge_host(bundle_root: Path, state: InstallState) -> None:
             "TWOMAN_PUBLIC_PROXY_URL": state.public_proxy_url,
         }
         script = bundle_root / "scripts" / "purge_host_bridge.sh"
+    elif state.backend == BACKEND_PASSENGER:
+        env = {
+            "TWOMAN_CPANEL_BASE_URL": state.cpanel_base_url,
+            "TWOMAN_CPANEL_USERNAME": state.cpanel_username,
+            "TWOMAN_CPANEL_PASSWORD": state.cpanel_password,
+            "TWOMAN_CPANEL_HOME": state.cpanel_home,
+            "TWOMAN_PUBLIC_ORIGIN": state.public_origin,
+            "TWOMAN_PUBLIC_BASE_PATH": state.public_base_path,
+            "TWOMAN_APP_NAME": state.passenger_app_name,
+            "TWOMAN_APP_ROOT": state.passenger_app_root,
+            "TWOMAN_CPANEL_PROXY_URL": state.cpanel_proxy_url,
+        }
+        script = bundle_root / "scripts" / "purge_host_passenger.sh"
     else:
         raise RuntimeError(f"purge is not implemented for backend {state.backend}")
     result = _run_script(script, env, cwd=bundle_root)
@@ -924,6 +937,32 @@ def collect_install_args(namespace: object) -> InstallArgs:
     )
 
 
+def _execute_deployment(bundle_root: Path, state: InstallState, args: InstallArgs) -> None:
+    args.control_root.mkdir(parents=True, exist_ok=True)
+    print("\nPreparing rollback and management controls...")
+    save_instance_state(args.control_root, state)
+    _create_control_venv(args.control_root, bundle_root)
+    _install_launcher(args.control_root)
+
+    print("\nDeploying public host backend...")
+    _deploy_host(bundle_root, state)
+    print("Installing hidden agent...")
+    _install_hidden_server(bundle_root, state)
+    print("Verifying live broker health...")
+    _verify_final_health(state)
+    if not args.skip_helper_probe:
+        print("Running local helper probe through the deployed broker...")
+        _helper_probe(
+            bundle_root,
+            state.broker_base_url,
+            state.client_token,
+            state.verify_tls,
+            state.client_http2_ctl,
+            state.client_http2_data,
+            state.public_proxy_url,
+        )
+
+
 def install(namespace: object) -> InstallState:
     args = collect_install_args(namespace)
     missing = [
@@ -1116,28 +1155,7 @@ def install(namespace: object) -> InstallState:
     if not args.non_interactive and not _prompt_bool("Proceed with deployment?", True):
         raise SystemExit("Cancelled.")
 
-    args.control_root.mkdir(parents=True, exist_ok=True)
-    print("\nDeploying public host backend...")
-    _deploy_host(bundle_root, state)
-    print("Installing hidden agent...")
-    _install_hidden_server(bundle_root, state)
-    print("Verifying live broker health...")
-    _verify_final_health(state)
-    if not args.skip_helper_probe:
-        print("Running local helper probe through the deployed broker...")
-        _helper_probe(
-            bundle_root,
-            state.broker_base_url,
-            state.client_token,
-            state.verify_tls,
-            state.client_http2_ctl,
-            state.client_http2_data,
-            state.public_proxy_url,
-        )
-    print("Bootstrapping the local twoman-server management command...")
-    save_instance_state(args.control_root, state)
-    _create_control_venv(args.control_root, bundle_root)
-    _install_launcher(args.control_root)
+    _execute_deployment(bundle_root, state, args)
 
     print("\nTwoman deployment complete.")
     print(f"  Management command: {SERVER_LAUNCHER_PATH}")

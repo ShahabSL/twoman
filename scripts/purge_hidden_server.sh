@@ -9,6 +9,8 @@ require_env() {
   fi
 }
 
+TWOMAN_SERVER_HOST="${TWOMAN_SERVER_HOST:-}"
+TWOMAN_SERVER_USER="${TWOMAN_SERVER_USER:-}"
 require_env TWOMAN_SERVER_HOST
 require_env TWOMAN_SERVER_USER
 require_env TWOMAN_INSTALL_ROOT
@@ -34,7 +36,8 @@ if [ -n "${TWOMAN_SERVER_SSH_KEY}" ]; then
 fi
 SSH_CMD=(ssh "${SSH_OPTS[@]}")
 if [ -n "${TWOMAN_SERVER_PASSWORD}" ]; then
-  SSH_CMD=(sshpass -p "${TWOMAN_SERVER_PASSWORD}" "${SSH_CMD[@]}")
+  export SSHPASS="${TWOMAN_SERVER_PASSWORD}"
+  SSH_CMD=(sshpass -e "${SSH_CMD[@]}")
 fi
 
 "${SSH_CMD[@]}" "${TWOMAN_SERVER_USER}@${TWOMAN_SERVER_HOST}" "\

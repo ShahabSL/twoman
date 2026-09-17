@@ -19,18 +19,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = REPO_ROOT / "desktop_app"
 TAURI_CONFIG_PATH = APP_ROOT / "src-tauri/tauri.conf.json"
 WINDOWS_BUILD_ROOT = Path(
-    "/mnt/c/Users/Shaha/AppData/Local/Temp/mintm-win-build/desktop_app/src-tauri/target/release"
+    os.environ.get(
+        "TWOMAN_WINDOWS_BUILD_ROOT",
+        APP_ROOT / "src-tauri/target/release",
+    )
 )
 WINDOWS_BUNDLE_ROOT = WINDOWS_BUILD_ROOT / "bundle"
+PORTABLE_ONLY = os.environ.get("TWOMAN_PORTABLE_ONLY", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
 WINDOWS_SIDECAR_CANDIDATES = [
-    Path(
-        "/mnt/c/Users/Shaha/AppData/Local/Temp/mintm-win-build/desktop_app/build/windows-sidecars/dist"
-    ),
-    Path(
-        "/mnt/c/Users/Shaha/AppData/Local/Temp/mintm-win-build/desktop_app/src-tauri/resources/sidecars/windows"
-    ),
+    APP_ROOT / "build/windows-sidecars/dist",
     REPO_ROOT / "desktop_app/src-tauri/resources/sidecars/windows",
-    REPO_ROOT / "private_handoff/desktop_app/windows/portable-ui/Twoman/sidecars/windows",
 ]
 HANDOFF_ROOT = REPO_ROOT / "private_handoff/desktop_app/windows"
 
@@ -133,18 +135,24 @@ def build_zip() -> Path:
 
 def main() -> None:
     HANDOFF_ROOT.mkdir(parents=True, exist_ok=True)
+    if PORTABLE_ROOT.exists():
+        shutil.rmtree(PORTABLE_ROOT)
     copy_required_file(
         WINDOWS_BUILD_ROOT / "desktop_app.exe",
         PORTABLE_ROOT / f"{APP_DISPLAY_NAME}.exe",
     )
-    copy_required_file(
-        resolve_windows_bundle("-setup.exe"),
-        HANDOFF_ROOT / windows_artifact_name("-setup.exe"),
-    )
-    copy_required_file(
-        resolve_windows_bundle("_en-US.msi"),
-        HANDOFF_ROOT / windows_artifact_name("_en-US.msi"),
-    )
+    webview_loader = WINDOWS_BUILD_ROOT / "WebView2Loader.dll"
+    if webview_loader.exists():
+        copy_required_file(webview_loader, PORTABLE_ROOT / webview_loader.name)
+    if not PORTABLE_ONLY:
+        copy_required_file(
+            resolve_windows_bundle("-setup.exe"),
+            HANDOFF_ROOT / windows_artifact_name("-setup.exe"),
+        )
+        copy_required_file(
+            resolve_windows_bundle("_en-US.msi"),
+            HANDOFF_ROOT / windows_artifact_name("_en-US.msi"),
+        )
     copy_required_file(
         resolve_sidecar(f"{HELPER_NAME}.exe"),
         SIDECAR_ROOT / f"{HELPER_NAME}.exe",
