@@ -137,7 +137,10 @@ PY
   done
   echo "Timed out waiting for $label on $host:$port" >&2
   for file in broker.log agent.log helper.log origin.log tls.log; do
-    [ -f "$TMP_DIR/$file" ] && echo "== $file ==" >&2 && cat "$TMP_DIR/$file" >&2 || true
+    if [ -f "$TMP_DIR/$file" ]; then
+      echo "== $file ==" >&2
+      cat "$TMP_DIR/$file" >&2
+    fi
   done
   return 1
 }
@@ -163,7 +166,10 @@ PY
   done
   echo "Timed out waiting for helper listen state: $path" >&2
   for file in broker.log agent.log helper.log origin.log tls.log; do
-    [ -f "$TMP_DIR/$file" ] && echo "== $file ==" >&2 && cat "$TMP_DIR/$file" >&2 || true
+    if [ -f "$TMP_DIR/$file" ]; then
+      echo "== $file ==" >&2
+      cat "$TMP_DIR/$file" >&2
+    fi
   done
   return 1
 }

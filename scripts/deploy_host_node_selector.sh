@@ -208,7 +208,7 @@ PY
   fi
 fi
 
-APP_RELATIVE="${TWOMAN_NODE_APP_ROOT#${TWOMAN_CPANEL_HOME}/}"
+APP_RELATIVE="${TWOMAN_NODE_APP_ROOT#"${TWOMAN_CPANEL_HOME}"/}"
 ensure_remote_dir "${APP_RELATIVE}"
 ensure_remote_dir "logs"
 if [ -n "${CAMOUFLAGE_MANIFEST_PATH}" ]; then

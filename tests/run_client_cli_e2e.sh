@@ -146,7 +146,10 @@ PY
   done
   echo "Timed out waiting for $label on $host:$port" >&2
   for file in broker.log agent.log origin.log tls.log; do
-    [ -f "$TMP_DIR/$file" ] && echo "== $file ==" >&2 && cat "$TMP_DIR/$file" >&2 || true
+    if [ -f "$TMP_DIR/$file" ]; then
+      echo "== $file ==" >&2
+      cat "$TMP_DIR/$file" >&2
+    fi
   done
   return 1
 }
@@ -163,9 +166,15 @@ retry_curl() {
   done
   cat "$curl_error" >&2 || true
   for file in broker.log agent.log; do
-    [ -f "$TMP_DIR/$file" ] && echo "== $file ==" >&2 && tail -200 "$TMP_DIR/$file" >&2 || true
+    if [ -f "$TMP_DIR/$file" ]; then
+      echo "== $file ==" >&2
+      tail -200 "$TMP_DIR/$file" >&2
+    fi
   done
-  [ -f "$STATE_DIR/logs/helper.log" ] && echo "== helper.log ==" >&2 && tail -200 "$STATE_DIR/logs/helper.log" >&2 || true
+  if [ -f "$STATE_DIR/logs/helper.log" ]; then
+    echo "== helper.log ==" >&2
+    tail -200 "$STATE_DIR/logs/helper.log" >&2
+  fi
   return 1
 }
 
@@ -254,10 +263,16 @@ DIAG_DIR="$(find "$TMP_DIR/diagnostics" -mindepth 1 -maxdepth 1 -type d | head -
 test -n "$DIAG_DIR"
 test -f "$DIAG_DIR/helper.log"
 test -f "$DIAG_DIR/profiles.redacted.json"
-! grep -R 'test-client-token' "$DIAG_DIR"
+if grep -R 'test-client-token' "$DIAG_DIR"; then
+  echo "diagnostics export leaked the client token" >&2
+  exit 1
+fi
 "$TMP_DIR/twoman" --home "$STATE_DIR" config > "$TMP_DIR/config.out"
 grep -q '<redacted>' "$TMP_DIR/config.out"
-! grep -q 'test-client-token' "$TMP_DIR/config.out"
+if grep -q 'test-client-token' "$TMP_DIR/config.out"; then
+  echo "config output leaked the client token" >&2
+  exit 1
+fi
 
 "$TMP_DIR/twoman" --home "$STATE_DIR" disconnect > "$TMP_DIR/stop.out"
 grep -q "Twoman stopped." "$TMP_DIR/stop.out"
