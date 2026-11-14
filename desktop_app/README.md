@@ -1,6 +1,6 @@
 # Twoman Desktop App
 
-`desktop_app/` is the Windows desktop client shell for Twoman.
+`desktop_app/` is the Tauri desktop client shell for Twoman.
 
 Stack:
 - Tauri 2
@@ -143,8 +143,49 @@ not depend on one blurred downscale from a large raster.
 
 ## Packaging
 
-Linux users should use the `twoman` CLI bundle from `client-cli/`. The Tauri
-desktop app is kept for Windows packaging and validation.
+The Linux desktop build uses the same React interface, profile format, Go
+helper and authenticated sharing gateway as the Windows desktop client.
+Linux supports local HTTP/SOCKS proxy mode and authenticated proxy sharing;
+system proxy and TUN modes remain Windows-only.
+
+On x86_64 Linux, install Node.js 22+, Rust, Go, Python 3.11+ with `venv`,
+and the Tauri native build dependencies (`pkg-config`, `libglib2.0-dev`,
+`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev` and `patchelf`). Then run:
+
+```bash
+bash desktop_app/scripts/build_linux.sh
+```
+
+The script checks that the repository and desktop package versions match,
+builds both Linux sidecars from this checkout, and creates a Debian package
+and a portable folder archive in `dist/desktop-linux/`. The portable folder
+includes a `Twoman` executable and `sidecars/linux/`; keep them together.
+Destination machines need GTK 3 and WebKitGTK 4.1, but no development tools
+or Python installation. Packages target the distribution used for the build.
+
+The Linux release configuration is passed explicitly by the script, so
+`cargo check` and development builds can still run before sidecars are staged.
+The `Linux desktop` GitHub Actions workflow builds on Ubuntu 22.04, tests both
+package layouts with a local relay under Xvfb, and saves the packages as CI
+artifacts. Publishing a GitHub release also attaches the tested `.deb`, portable
+archive, versioned checksum file and build information to that release. The
+release tag (with an optional `v` prefix) must match `VERSION`.
+
+To run the same native smoke test locally, install `webkit2gtk-driver`, `xvfb`,
+`xauth` and `dbus-x11`, then run:
+
+```bash
+npm ci --prefix host/node_selector
+xvfb-run -a -s '-screen 0 1280x900x24' dbus-run-session -- \
+  python3 tests/run_desktop_linux_smoke.py
+```
+
+The test uses isolated application data and a loopback-only relay, verifies
+that the bundled sidecars are used, and checks HTTP/SOCKS proxies,
+authenticated sharing, disconnect and reconnect. It needs no live credentials.
+
+For a headless Linux client, use the `twoman` CLI bundle from `client-cli/`.
 
 ## Validation
 
