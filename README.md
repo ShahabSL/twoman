@@ -112,6 +112,14 @@ Windows desktop:
 - import the same `twoman://...` text
 - connect, then choose SOCKS, HTTP, system proxy, or tunnel mode
 
+Linux desktop (x86_64):
+
+- use the `.deb` package or `twoman-desktop-linux-amd64-v<version>.tar.gz` desktop archive from a release
+- install the `.deb` with `sudo apt install ./Twoman_VERSION_amd64.deb` (replace `VERSION`), or extract the archive and run `./Twoman`
+- import the same `twoman://...` text and connect in local HTTP/SOCKS proxy mode
+- authenticated SOCKS/HTTP sharing is supported; system proxy and TUN modes remain Windows-only
+- see [desktop build and packaging instructions](desktop_app/README.md#packaging) to build from source
+
 Headless Linux:
 
 ```bash
@@ -177,8 +185,8 @@ Design boundaries:
   camouflage/topology requirement does not apply
 - clients do not hardcode throughput knobs; helpers follow broker health,
   server-side transport profiles, and adaptive upload settings where enabled
-- Linux users should use the `twoman` CLI for client management and
-  `twoman-server` for hidden-server management
+- Linux clients can use the desktop GUI or the headless `twoman` CLI;
+  use `twoman-server` for hidden-server management
 
 ## Documentation
 
@@ -200,8 +208,8 @@ Start here:
 - `twoman_protocol.py`: Python protocol helpers used by host/control compatibility tests
 - `hidden_server/`: hidden-server config, watchdog, and systemd support for the Go agent
 - `android-client/`: Android client with saved profiles, share/import profile text, proxy mode, and VPN mode
-- `desktop_app/`: Windows Tauri desktop GUI that launches the Go helper sidecar
-- `desktop_client/socks_gateway.py`: Windows desktop authenticated share proxy sidecar source
+- `desktop_app/`: Windows/Linux Tauri desktop GUI that launches the Go helper sidecar
+- `desktop_client/socks_gateway.py`: desktop authenticated share proxy sidecar source
 - `client-cli/`: Linux `twoman` CLI that imports profiles and runs the Go helper
 - `host/node_selector/broker.js`: CloudLinux Node selector broker for managed-host deployments
 - `host/runtime/http_broker_daemon.py`: asyncio broker for bridge-style cPanel deployments

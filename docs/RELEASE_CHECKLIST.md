@@ -17,6 +17,15 @@
 - Verify the server-control bundle version:
   - `python -m twoman_control.cli version`
   - `twoman-server version` after install
+- Verify the Linux desktop packages:
+  - `bash desktop_app/scripts/build_linux.sh`
+  - `cd dist/desktop-linux && sha256sum --check ./*.sha256`
+  - `npm ci --prefix host/node_selector` from the repository root
+  - `xvfb-run -a -s '-screen 0 1280x900x24' dbus-run-session -- python3 tests/run_desktop_linux_smoke.py`
+  - verify the extracted Debian layout with the smoke test's `--app` and `--sidecars` options
+  - confirm local HTTP/SOCKS, authenticated SOCKS/HTTP sharing, disconnect and reconnect work without source-mode runtimes
+  - confirm the `Linux desktop` workflow passes and the published release receives its `.deb`, portable archive, checksums and build information
+  - keep system proxy and TUN mode documented as Windows-only
 - Verify the repo deploy commands still work when used manually:
   - `scripts/deploy_host.sh`
   - `scripts/deploy_hidden_server.sh`
@@ -30,6 +39,7 @@
 - Rebuild release artifacts when shared runtime files changed:
   - Android APK/AAB
   - Linux CLI bundle
+  - Linux desktop `.deb` and portable archive
   - Windows desktop bundles
 - Verify no real tokens are present in tracked files
 - Verify `host/storage/` is empty or absent

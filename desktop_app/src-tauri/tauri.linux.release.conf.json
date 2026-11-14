@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "twoman-desktop",
+  "bundle": {
+    "targets": ["deb"],
+    "resources": {
+      "resources/sidecars/linux/twoman-helper": "sidecars/linux/twoman-helper",
+      "resources/sidecars/linux/twoman-gateway": "sidecars/linux/twoman-gateway"
+    },
+    "linux": {
+      "deb": {
+        "section": "net"
+      }
+    }
+  }
+}

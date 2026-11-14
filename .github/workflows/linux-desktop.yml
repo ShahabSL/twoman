@@ -1,0 +1,146 @@
+name: Linux desktop
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/linux-desktop.yml'
+      - 'desktop_app/**'
+      - 'desktop_client/socks_gateway.py'
+      - 'helper-agent/**'
+      - 'host/node_selector/**'
+      - 'tests/run_desktop_linux_smoke.py'
+      - 'VERSION'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/linux-desktop.yml'
+      - 'desktop_app/**'
+      - 'desktop_client/socks_gateway.py'
+      - 'helper-agent/**'
+      - 'host/node_selector/**'
+      - 'tests/run_desktop_linux_smoke.py'
+      - 'VERSION'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Build against an older glibc so release packages also work on newer Ubuntu.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify release version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: test "${RELEASE_TAG#v}" = "$(cat VERSION)"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            desktop_app/package-lock.json
+            host/node_selector/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Select stable Rust
+        run: rustup default stable
+
+      - name: Cache Rust dependencies and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop_app/src-tauri/target
+          key: linux-desktop-ubuntu22-${{ hashFiles('desktop_app/src-tauri/Cargo.lock') }}
+
+      - name: Install native build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            webkit2gtk-driver xvfb xauth dbus-x11
+
+      - name: Build Linux desktop packages
+        run: bash desktop_app/scripts/build_linux.sh
+
+      - name: Verify artifact checksums
+        working-directory: dist/desktop-linux
+        run: sha256sum --check ./*.sha256
+
+      - name: Install local test broker dependencies
+        run: npm ci --prefix host/node_selector --no-audit --no-fund
+
+      - name: Test portable client
+        run: |
+          xvfb-run -a -s '-screen 0 1280x900x24' dbus-run-session -- \
+            python3 tests/run_desktop_linux_smoke.py
+
+      - name: Test extracted Debian client
+        run: |
+          dpkg-deb --extract dist/desktop-linux/Twoman_"$(cat VERSION)"_amd64.deb desktop_app/build/deb-root
+          xvfb-run -a -s '-screen 0 1280x900x24' dbus-run-session -- \
+            python3 tests/run_desktop_linux_smoke.py \
+              --app desktop_app/build/deb-root/usr/bin/twoman-desktop \
+              --sidecars desktop_app/build/deb-root/usr/lib/Twoman/sidecars/linux \
+              --output desktop_app/build/linux-deb-smoke
+
+      - name: Upload test logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop-test-results
+          path: |
+            desktop_app/build/linux-smoke/
+            desktop_app/build/linux-deb-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop-amd64
+          path: |
+            dist/desktop-linux/*.deb
+            dist/desktop-linux/*.tar.gz
+            dist/desktop-linux/*.sha256
+            dist/desktop-linux/*.build-info.txt
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: linux-desktop-amd64
+          path: release-assets
+
+      - name: Attach tested Linux packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber
